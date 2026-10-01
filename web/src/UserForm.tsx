@@ -1,4 +1,4 @@
-import { UserSchema, type User } from "@circles/ai";
+import { UserSchema, type User } from "@circles/shared";
 import { useState } from "react";
 
 interface Block {

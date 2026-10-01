@@ -7,8 +7,8 @@ import {
   unverifiedFilters,
   type Filter,
 } from "./filters.js";
-import { weekMinutes } from "./time.js";
-import type { Candidate, SearchFields } from "./types.js";
+import { weekMinutes } from "@circles/shared";
+import type { Candidate, SearchFields } from "@circles/shared";
 
 const place = (over: Partial<Candidate> = {}): Candidate => ({
   id: "p1",

@@ -1,5 +1,5 @@
 {
   "name": "circles",
   "private": true,
-  "workspaces": ["ai", "web", "api"]
+  "workspaces": ["shared", "ai", "web", "api"]
 }

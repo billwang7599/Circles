@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "dependencies": {
+    "@circles/shared": "*",
     "ai": "^7.0.127",
     "zod": "^4.6.5"
   },

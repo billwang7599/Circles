@@ -3,8 +3,8 @@ import {
   isValidTimeZone,
   parseInstant,
   weekMinutes,
-} from "./time.js";
-import type { Candidate, LatLng, SearchFields } from "./types.js";
+} from "@circles/shared";
+import type { Candidate, LatLng, SearchFields } from "@circles/shared";
 
 export type FilterName = "budget" | "distance" | "openHours" | "partySize";
 

@@ -1,4 +1,4 @@
-import type { User } from "@circles/ai";
+import type { User } from "@circles/shared";
 
 const HOUR = 3600_000;
 

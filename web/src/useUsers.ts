@@ -1,4 +1,4 @@
-import { UserSchema, type User } from "@circles/ai";
+import { UserSchema, type User } from "@circles/shared";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 

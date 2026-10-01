@@ -1,7 +1,7 @@
 // Time conventions: every instant is an ISO 8601 UTC string ending in "Z".
 // Intervals are half-open, [start, end). Local-clock concepts (opening hours,
 // "Saturday evening") use an IANA timezone passed alongside, never a bare offset.
-import type { TimeWindow } from "./types.js";
+import type { TimeWindow } from "./types/window.js";
 
 export const WEEK_MIN = 7 * 24 * 60;
 
@@ -72,4 +72,40 @@ export function weekMinutes(iso: string, timeZone: string): number {
     get("weekday"),
   );
   return day * 1440 + Number(get("hour")) * 60 + Number(get("minute"));
+}
+
+const iso = (ms: number) => new Date(ms).toISOString();
+
+/** Sort and merge overlapping or touching intervals. */
+export function mergeIntervals(windows: TimeWindow[]): TimeWindow[] {
+  const sorted = windows
+    .map((w) => ({ s: parseInstant(w.start), e: parseInstant(w.end) }))
+    .sort((a, b) => a.s - b.s);
+  const out: { s: number; e: number }[] = [];
+  for (const w of sorted) {
+    const last = out[out.length - 1];
+    if (last && w.s <= last.e) last.e = Math.max(last.e, w.e);
+    else out.push({ ...w });
+  }
+  return out.map((w) => ({ start: iso(w.s), end: iso(w.e) }));
+}
+
+/** The parts of `range` not covered by any of `blocks`. */
+export function subtractIntervals(
+  range: TimeWindow,
+  blocks: TimeWindow[],
+): TimeWindow[] {
+  const end = parseInstant(range.end);
+  let cursor = parseInstant(range.start);
+  const free: TimeWindow[] = [];
+  for (const b of mergeIntervals(blocks)) {
+    const bs = parseInstant(b.start);
+    const be = parseInstant(b.end);
+    if (be <= cursor) continue;
+    if (bs >= end) break;
+    if (bs > cursor) free.push({ start: iso(cursor), end: iso(bs) });
+    cursor = Math.max(cursor, be);
+  }
+  if (cursor < end) free.push({ start: iso(cursor), end: iso(end) });
+  return free;
 }

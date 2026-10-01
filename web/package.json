@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "dependencies": {
-    "@circles/ai": "^0.0.0",
+    "@circles/shared": "*",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

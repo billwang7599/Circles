@@ -3,6 +3,8 @@ import {
   intersect,
   intersectAll,
   makeInterval,
+  mergeIntervals,
+  subtractIntervals,
   overlaps,
   parseInstant,
   weekMinutes,
@@ -64,5 +66,33 @@ describe("weekMinutes and daylight saving", () => {
   test("fall back 2026-11-01: 01:30 local happens twice, same week-minute", () => {
     expect(weekMinutes("2026-11-01T05:30:00Z", tz)).toBe(90);
     expect(weekMinutes("2026-11-01T06:30:00Z", tz)).toBe(90);
+  });
+});
+
+describe("mergeIntervals and subtractIntervals", () => {
+  const w = (s: number, e: number) => ({
+    start: `2026-10-03T${String(s).padStart(2, "0")}:00:00.000Z`,
+    end: `2026-10-03T${String(e).padStart(2, "0")}:00:00.000Z`,
+  });
+  test("merge joins overlapping and touching blocks, sorted", () => {
+    expect(
+      mergeIntervals([w(14, 16), w(10, 12), w(11, 13), w(13, 14)]),
+    ).toEqual([w(10, 16)]);
+  });
+  test("subtract removes blocks from the range", () => {
+    expect(subtractIntervals(w(9, 18), [w(11, 12), w(14, 15)])).toEqual([
+      w(9, 11),
+      w(12, 14),
+      w(15, 18),
+    ]);
+  });
+  test("subtract clips blocks that extend past the range and ignores ones outside", () => {
+    expect(subtractIntervals(w(9, 18), [w(7, 10), w(17, 20), w(0, 1)])).toEqual(
+      [w(10, 17)],
+    );
+  });
+  test("subtract with no blocks returns the range; fully blocked returns nothing", () => {
+    expect(subtractIntervals(w(9, 18), [])).toEqual([w(9, 18)]);
+    expect(subtractIntervals(w(9, 18), [w(8, 19)])).toEqual([]);
   });
 });
