@@ -1,5 +1,27 @@
 {
   "name": "@circles/ai",
   "private": true,
-  "version": "0.0.0"
+  "version": "0.0.0",
+  "dependencies": {
+    "ai": "^7.0.127",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "eslint": "^10.11.0",
+    "prettier": "^3.9.9",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^5.0.3"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "dev": "tsx src/main.ts"
+  },
+  "main": "src/index.ts"
 }
