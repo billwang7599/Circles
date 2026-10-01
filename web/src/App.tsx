@@ -1,5 +1,6 @@
 import { CITIES } from "@circles/shared";
 import { useState } from "react";
+import { PlanNow } from "./PlanNow";
 import { UserForm } from "./UserForm";
 import { makeSampleUsers } from "./sampleUsers";
 import { useCity } from "./useCity";
@@ -9,6 +10,7 @@ export default function App() {
   const { users, addUser, addUsers, removeUser } = useUsers();
   const { city, setCityId } = useCity();
   const [adding, setAdding] = useState(false);
+  const [planning, setPlanning] = useState(false);
 
   return (
     <main className="mx-auto max-w-xl space-y-6 p-6">
@@ -53,6 +55,19 @@ export default function App() {
             Add sample users
           </button>
         </div>
+      )}
+
+      <button
+        className="rounded bg-emerald-600 px-3 py-1.5 text-white disabled:opacity-50"
+        disabled={users.length === 0}
+        title={users.length === 0 ? "Add at least one user first" : undefined}
+        onClick={() => setPlanning(true)}
+      >
+        Plan Now
+      </button>
+
+      {planning && (
+        <PlanNow users={users} city={city} onClose={() => setPlanning(false)} />
       )}
 
       <ul className="space-y-2">
