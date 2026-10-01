@@ -1,15 +1,34 @@
+import { CITIES } from "@circles/shared";
 import { useState } from "react";
 import { UserForm } from "./UserForm";
 import { makeSampleUsers } from "./sampleUsers";
+import { useCity } from "./useCity";
 import { useUsers } from "./useUsers";
 
 export default function App() {
   const { users, addUser, addUsers, removeUser } = useUsers();
+  const { city, setCityId } = useCity();
   const [adding, setAdding] = useState(false);
 
   return (
     <main className="mx-auto max-w-xl space-y-6 p-6">
       <h1 className="text-3xl font-bold">Circles</h1>
+
+      <label className="block text-sm">
+        City
+        <select
+          className="w-full rounded border border-slate-300 px-2 py-1"
+          value={city.id}
+          onChange={(e) => setCityId(e.target.value)}
+        >
+          {CITIES.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <span className="text-slate-600">Timezone: {city.timezone}</span>
+      </label>
 
       {adding ? (
         <UserForm
