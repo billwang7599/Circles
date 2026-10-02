@@ -9,16 +9,16 @@ import {
   type TimeWindow,
 } from "@circles/shared";
 import { z } from "zod";
-import { deriveConstraints } from "./constraints.js";
-import { applyFilters, unverifiedFilters, type FilterName } from "./filters.js";
+import { deriveConstraints } from "./constraints.ts";
+import { applyFilters, unverifiedFilters, type FilterName } from "./filters.ts";
 import {
   ParsedRequestSchema,
   RankedPickSchema,
   type LlmClient,
   type ParsedRequest,
   type RankedPick,
-} from "./llm.js";
-import type { PlacesClient } from "./places.js";
+} from "./llm.ts";
+import type { PlacesClient } from "./places.ts";
 
 export interface PlanDeps {
   llm: LlmClient;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { UserSchema } from "./user.js";
+import { UserSchema } from "./user.ts";
 
 const valid = {
   id: "u1",

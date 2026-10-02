@@ -6,7 +6,7 @@ import {
   fitsParty as partyRaw,
   unverifiedFilters,
   type Filter,
-} from "./filters.js";
+} from "./filters.ts";
 import { weekMinutes } from "@circles/shared";
 import type { Candidate, SearchFields } from "@circles/shared";
 

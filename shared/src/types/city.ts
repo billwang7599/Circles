@@ -1,4 +1,4 @@
-import type { LatLng } from "./place.js";
+import type { LatLng } from "./place.ts";
 
 export interface City {
   id: string;

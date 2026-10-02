@@ -1,5 +1,5 @@
 import { MockLanguageModelV4 } from "ai/test";
-import type { PlacesClient, PlacesQuery } from "./places.js";
+import type { PlacesClient, PlacesQuery } from "./places.ts";
 import type { Candidate, LatLng, OpeningPeriod } from "@circles/shared";
 
 /** Open every day from openH to closeH local time. closeH above 24 wraps past midnight. */

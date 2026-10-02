@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { FakePlacesClient, createFakeLlmModel } from "./fakes.js";
-import { LlmClient, ParsedRequestSchema, RankedPickSchema } from "./llm.js";
+import { FakePlacesClient, createFakeLlmModel } from "./fakes.ts";
+import { LlmClient, ParsedRequestSchema, RankedPickSchema } from "./llm.ts";
 
 const center = { lat: 43.65, lng: -79.38 };
 

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { isValidTimeZone } from "../time.js";
-import { UserSchema } from "./user.js";
+import { isValidTimeZone } from "../time.ts";
+import { UserSchema } from "./user.ts";
 
 export const GroupContextSchema = z.object({
   /** City id, see city.ts. */

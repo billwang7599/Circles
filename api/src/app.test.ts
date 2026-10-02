@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createApp } from "./app.js";
+import { createApp } from "./app.ts";
 
 const app = createApp();
 const post = (body: unknown) =>

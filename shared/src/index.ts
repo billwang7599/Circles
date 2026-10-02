@@ -1,8 +1,8 @@
 // Shared schemas and utilities for ai, api and web. Exports only.
-export * from "./time.js";
-export * from "./types/city.js";
-export * from "./types/group.js";
-export * from "./types/place.js";
-export * from "./types/plan.js";
-export * from "./types/user.js";
-export * from "./types/window.js";
+export * from "./time.ts";
+export * from "./types/city.ts";
+export * from "./types/group.ts";
+export * from "./types/place.ts";
+export * from "./types/plan.ts";
+export * from "./types/user.ts";
+export * from "./types/window.ts";

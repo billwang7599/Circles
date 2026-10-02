@@ -1,7 +1,7 @@
 // Time conventions: every instant is an ISO 8601 UTC string ending in "Z".
 // Intervals are half-open, [start, end). Local-clock concepts (opening hours,
 // "Saturday evening") use an IANA timezone passed alongside, never a bare offset.
-import type { TimeWindow } from "./types/window.js";
+import type { TimeWindow } from "./types/window.ts";
 
 export const WEEK_MIN = 7 * 24 * 60;
 

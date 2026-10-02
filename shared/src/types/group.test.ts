@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { GroupContextSchema } from "./group.js";
-import type { User } from "./user.js";
+import { GroupContextSchema } from "./group.ts";
+import type { User } from "./user.ts";
 
 const user: User = {
   id: "u",

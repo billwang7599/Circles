@@ -4,9 +4,9 @@ import {
   FakePlacesClient,
   createFakeLlmModel,
   type FakeLlmOverrides,
-} from "./fakes.js";
-import { LlmClient } from "./llm.js";
-import { PlannerError, planEvent, type PlanDeps } from "./plan.js";
+} from "./fakes.ts";
+import { LlmClient } from "./llm.ts";
+import { PlannerError, planEvent, type PlanDeps } from "./plan.ts";
 
 // Saturday 2026-10-03 11:00 local (Toronto, EDT).
 const NOW = new Date("2026-10-03T15:00:00Z");

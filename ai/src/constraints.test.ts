@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { GroupContextSchema, type User } from "@circles/shared";
-import { deriveConstraints, priceLevelForBudget } from "./constraints.js";
+import { deriveConstraints, priceLevelForBudget } from "./constraints.ts";
 
 const user = (over: Partial<User> = {}): User => ({
   id: "u",

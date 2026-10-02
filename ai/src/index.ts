@@ -1,8 +1,8 @@
 // Library entry for @circles/ai. Exports only; must not run anything on import.
 // TODO: export planEvent(request, deps) once the pipeline is wired.
-export * from "./constraints.js";
-export * from "./fakes.js";
-export * from "./filters.js";
-export * from "./llm.js";
-export * from "./places.js";
-export * from "./plan.js";
+export * from "./constraints.ts";
+export * from "./fakes.ts";
+export * from "./filters.ts";
+export * from "./llm.ts";
+export * from "./places.ts";
+export * from "./plan.ts";

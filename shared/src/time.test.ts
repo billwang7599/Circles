@@ -8,7 +8,7 @@ import {
   overlaps,
   parseInstant,
   weekMinutes,
-} from "./time.js";
+} from "./time.ts";
 
 const tz = "America/New_York";
 

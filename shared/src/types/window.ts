@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { parseInstant } from "../time.js";
+import { parseInstant } from "../time.ts";
 
 const isInstant = (iso: string) => {
   try {

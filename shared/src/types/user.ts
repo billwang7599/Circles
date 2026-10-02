@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TimeWindowSchema } from "./window.js";
+import { TimeWindowSchema } from "./window.ts";
 
 /** A group member's own constraints. Draft shape: the Circles data model is not final. */
 export const UserSchema = z.object({

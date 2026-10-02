@@ -1,5 +1,5 @@
-import type { Candidate, LatLng } from "./place.js";
-import type { TimeWindow } from "./window.js";
+import type { Candidate, LatLng } from "./place.ts";
+import type { TimeWindow } from "./window.ts";
 
 /** Hard constraints the filters enforce. Built in code from the group and the parsed request. */
 export interface SearchFields {

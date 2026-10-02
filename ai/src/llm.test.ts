@@ -1,7 +1,7 @@
 import type { Candidate } from "@circles/shared";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, test } from "vitest";
-import { LlmClient } from "./llm.js";
+import { LlmClient } from "./llm.ts";
 
 const modelReturning = (json: unknown) =>
   new MockLanguageModelV4({
