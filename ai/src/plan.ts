@@ -4,6 +4,7 @@ import {
   parseInstant,
   type Candidate,
   type PlanOption,
+  type PlanStage,
   type PlanRequest,
   type SearchFields,
   type TimeWindow,
@@ -30,6 +31,8 @@ export interface PlanDeps {
 export interface PlanOptions {
   /** How many options to return. Default 3. */
   n?: number;
+  /** Called as the pipeline moves between steps, so callers can show progress. */
+  onProgress?: (stage: PlanStage) => void;
 }
 
 export type NoMatchReason = "no_free_time" | "no_restaurants" | FilterName;
@@ -139,7 +142,7 @@ function describeChecks(c: Candidate, f: SearchFields): string[] {
 export async function planEvent(
   rawRequest: PlanRequest,
   deps: PlanDeps,
-  { n = 3 }: PlanOptions = {},
+  { n = 3, onProgress }: PlanOptions = {},
 ): Promise<PlanResult> {
   const request = PlanRequestSchema.parse(rawRequest);
   const { group } = request;
@@ -154,6 +157,7 @@ export async function planEvent(
   const constraints = deriveConstraints(group, range);
 
   // 1. Parse (LLM)
+  onProgress?.("parsing");
   const parsed: ParsedRequest = await validated(
     () =>
       deps.llm.parse({
@@ -181,6 +185,7 @@ export async function planEvent(
   };
 
   // 2. Fetch and filter (plain code)
+  onProgress?.("searching");
   const found = await deps.restaurants.search({
     center: city.center,
     radiusKm: constraints.maxDistanceKm,
@@ -194,6 +199,7 @@ export async function planEvent(
   if (passed.length === 0)
     return noMatches(mostRestrictive ?? "no_restaurants");
 
+  onProgress?.("ranking");
   // 3. Rank and explain (LLM). Every pick must be a distinct candidate that passed.
   const allowed = new Set(passed.map((c) => c.id));
   const picks: RankedPick[] = await validated(
