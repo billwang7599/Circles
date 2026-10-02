@@ -1,4 +1,4 @@
-import type { City, User } from "@circles/shared";
+import type { City, PlanResponse, User } from "@circles/shared";
 import { useState } from "react";
 
 interface EventType {
@@ -47,7 +47,7 @@ export function PlanNow({
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-full max-w-md space-y-4 rounded-lg bg-white p-5">
+      <div className="max-h-[90vh] w-full max-w-md space-y-4 overflow-y-auto rounded-lg bg-white p-5">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">
             {chosen ? chosen.label : "What do you want to plan?"}
@@ -58,22 +58,7 @@ export function PlanNow({
         </div>
 
         {chosen ? (
-          <div className="space-y-3">
-            <p className="text-sm">
-              Planning for {users.length}{" "}
-              {users.length === 1 ? "person" : "people"} in {city.name}.
-            </p>
-            {/* TODO: send the request to the planner once the api is wired. */}
-            <p className="text-sm text-slate-600">
-              The planner isn't connected yet.
-            </p>
-            <button
-              className="rounded border border-slate-300 px-3 py-1.5"
-              onClick={() => setChosen(null)}
-            >
-              Back
-            </button>
-          </div>
+          <PlanForm users={users} city={city} onBack={() => setChosen(null)} />
         ) : (
           <ul className="space-y-2">
             {EVENT_TYPES.map((t) => (
@@ -98,6 +83,116 @@ export function PlanNow({
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+function PlanForm({
+  users,
+  city,
+  onBack,
+}: {
+  users: User[];
+  city: City;
+  onBack: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<PlanResponse | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await fetch("/api/plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          text: text.trim() || "dinner",
+          group: { city: city.id, timezone: city.timezone, members: users },
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok)
+        throw new Error(body.error ?? `Request failed (${res.status})`);
+      setResult(body);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm">
+        Planning for {users.length} {users.length === 1 ? "person" : "people"}{" "}
+        in {city.name}.
+      </p>
+      <form onSubmit={submit} className="space-y-2">
+        <input
+          className="w-full rounded border border-slate-300 px-2 py-1"
+          placeholder="e.g. ramen for 4"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={loading}
+            className="rounded bg-emerald-600 px-3 py-1.5 text-white disabled:opacity-50"
+          >
+            {loading ? "Planning..." : "Find options"}
+          </button>
+          <button
+            type="button"
+            className="rounded border border-slate-300 px-3 py-1.5"
+            onClick={onBack}
+          >
+            Back
+          </button>
+        </div>
+      </form>
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
+
+      {result?.status === "no_matches" && (
+        <p className="text-sm text-amber-700">{result.message}</p>
+      )}
+
+      {result?.status === "ok" && (
+        <ul className="space-y-2">
+          {result.options.map((o) => {
+            const place = result.candidates.find((c) => c.id === o.candidateId);
+            return (
+              <li
+                key={o.candidateId}
+                className="rounded border border-slate-200 p-3"
+              >
+                <div className="font-medium">
+                  {place?.name ?? o.candidateId}
+                </div>
+                <p className="text-sm">{o.rationale}</p>
+                <ul className="mt-1 list-disc pl-5 text-xs text-slate-600">
+                  {o.constraintChecks.map((c) => (
+                    <li
+                      key={c}
+                      className={
+                        c.includes("unverified") ? "text-amber-700" : ""
+                      }
+                    >
+                      {c}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
