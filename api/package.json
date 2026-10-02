@@ -6,7 +6,9 @@
     "@circles/ai": "*",
     "@circles/shared": "*",
     "@hono/node-server": "^2.1.3",
-    "hono": "^4.13.12"
+    "ai": "^7.0.127",
+    "hono": "^4.13.12",
+    "workers-ai-provider": "^4.0.0"
   },
   "type": "module",
   "scripts": {
