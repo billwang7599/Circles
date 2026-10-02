@@ -18,11 +18,11 @@ import {
   type ParsedRequest,
   type RankedPick,
 } from "./llm.ts";
-import type { PlacesClient } from "./places.ts";
+import type { RestaurantClient } from "./restaurants.ts";
 
 export interface PlanDeps {
   llm: LlmClient;
-  places: PlacesClient;
+  restaurants: RestaurantClient;
   /** Injectable clock for tests. */
   now?: () => Date;
 }
@@ -32,7 +32,7 @@ export interface PlanOptions {
   n?: number;
 }
 
-export type NoMatchReason = "no_free_time" | "no_places" | FilterName;
+export type NoMatchReason = "no_free_time" | "no_restaurants" | FilterName;
 
 export type PlanResult =
   | {
@@ -53,7 +53,7 @@ const DAY_MS = 24 * 3600_000;
 
 const NO_MATCH_MESSAGES: Record<NoMatchReason, string> = {
   no_free_time: "No time in the next two weeks when everyone is free.",
-  no_places: "No places were found for that request.",
+  no_restaurants: "No restaurants were found for that request.",
   budget: "Every place found was over the group's budget.",
   distance: "Every place found was farther than the group's distance limit.",
   openHours: "Every place found was closed at the chosen time.",
@@ -181,17 +181,18 @@ export async function planEvent(
   };
 
   // 2. Fetch and filter (plain code)
-  const found = await deps.places.search({
+  const found = await deps.restaurants.search({
     center: city.center,
     radiusKm: constraints.maxDistanceKm,
     ...(fields.cuisine ? { cuisine: fields.cuisine } : {}),
   });
-  if (found.length === 0) return noMatches("no_places");
+  if (found.length === 0) return noMatches("no_restaurants");
 
   const { passed, mostRestrictive } = applyFilters(found, fields, {
     timezone: group.timezone,
   });
-  if (passed.length === 0) return noMatches(mostRestrictive ?? "no_places");
+  if (passed.length === 0)
+    return noMatches(mostRestrictive ?? "no_restaurants");
 
   // 3. Rank and explain (LLM). Every pick must be a distinct candidate that passed.
   const allowed = new Set(passed.map((c) => c.id));

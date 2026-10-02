@@ -1,7 +1,7 @@
 import type { PlanRequest, User } from "@circles/shared";
 import { describe, expect, test } from "vitest";
 import {
-  FakePlacesClient,
+  FakeRestaurantClient,
   createFakeLlmModel,
   type FakeLlmOverrides,
 } from "./fakes.ts";
@@ -25,7 +25,7 @@ const request = (members: User[], text = "dinner"): PlanRequest => ({
 });
 const deps = (overrides: FakeLlmOverrides = {}): PlanDeps => ({
   llm: new LlmClient(createFakeLlmModel(overrides)),
-  places: new FakePlacesClient(),
+  restaurants: new FakeRestaurantClient(),
   now: () => NOW,
 });
 
@@ -96,12 +96,12 @@ describe("planEvent", () => {
     expect(r).toMatchObject({ status: "no_matches", reason: "distance" });
   });
 
-  test("a cuisine with no places gives no_places", async () => {
+  test("a cuisine with no restaurants gives no_restaurants", async () => {
     const r = await planEvent(
       request([user()], "french dinner"),
       deps({ parse: () => ({ cuisine: "nonexistent" }) }),
     );
-    expect(r).toMatchObject({ status: "no_matches", reason: "no_places" });
+    expect(r).toMatchObject({ status: "no_matches", reason: "no_restaurants" });
   });
 });
 

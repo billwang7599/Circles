@@ -1,5 +1,5 @@
 import { MockLanguageModelV4 } from "ai/test";
-import type { PlacesClient, PlacesQuery } from "./places.ts";
+import type { RestaurantClient, RestaurantQuery } from "./restaurants.ts";
 import type { Candidate, LatLng, OpeningPeriod } from "@circles/shared";
 
 /** Open every day from openH to closeH local time. closeH above 24 wraps past midnight. */
@@ -94,10 +94,10 @@ const DEFAULT_PLACES: FakePlace[] = [
 ];
 
 /** Canned places positioned around the search center. Filters by cuisine and radius like a real search would. */
-export class FakePlacesClient implements PlacesClient {
+export class FakeRestaurantClient implements RestaurantClient {
   constructor(private readonly places: FakePlace[] = DEFAULT_PLACES) {}
 
-  async search(q: PlacesQuery): Promise<Candidate[]> {
+  async search(q: RestaurantQuery): Promise<Candidate[]> {
     return this.places
       .filter(
         (p) => !q.cuisine || p.cuisines?.includes(q.cuisine.toLowerCase()),

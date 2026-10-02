@@ -4,5 +4,5 @@ export * from "./constraints.ts";
 export * from "./fakes.ts";
 export * from "./filters.ts";
 export * from "./llm.ts";
-export * from "./places.ts";
+export * from "./restaurants.ts";
 export * from "./plan.ts";

@@ -1,6 +1,6 @@
 // Dev runner: run the pipeline from the terminal on fakes (npm run dev).
 import type { PlanRequest } from "@circles/shared";
-import { FakePlacesClient, createFakeLlmModel } from "./fakes.ts";
+import { FakeRestaurantClient, createFakeLlmModel } from "./fakes.ts";
 import { LlmClient } from "./llm.ts";
 import { planEvent } from "./plan.ts";
 
@@ -41,6 +41,6 @@ const request: PlanRequest = {
 
 const result = await planEvent(request, {
   llm: new LlmClient(createFakeLlmModel()),
-  places: new FakePlacesClient(),
+  restaurants: new FakeRestaurantClient(),
 });
 console.log(JSON.stringify(result, null, 2));

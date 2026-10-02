@@ -1,12 +1,15 @@
 import { describe, expect, test } from "vitest";
-import { FakePlacesClient, createFakeLlmModel } from "./fakes.ts";
+import { FakeRestaurantClient, createFakeLlmModel } from "./fakes.ts";
 import { LlmClient, ParsedRequestSchema, RankedPickSchema } from "./llm.ts";
 
 const center = { lat: 43.65, lng: -79.38 };
 
-describe("FakePlacesClient", () => {
+describe("FakeRestaurantClient", () => {
   test("returns candidates around the center", async () => {
-    const found = await new FakePlacesClient().search({ center, radiusKm: 5 });
+    const found = await new FakeRestaurantClient().search({
+      center,
+      radiusKm: 5,
+    });
     expect(found.length).toBeGreaterThan(0);
     expect(found.every((c) => Math.abs(c.location.lat - center.lat) < 1)).toBe(
       true,
@@ -14,7 +17,7 @@ describe("FakePlacesClient", () => {
     expect(new Set(found.map((c) => c.id)).size).toBe(found.length);
   });
   test("filters by cuisine", async () => {
-    const found = await new FakePlacesClient().search({
+    const found = await new FakeRestaurantClient().search({
       center,
       radiusKm: 5,
       cuisine: "Italian",
@@ -38,7 +41,7 @@ describe("fake LLM model through LlmClient", () => {
     });
   });
   test("rank returns at most n picks from the given candidates, best rated first", async () => {
-    const candidates = await new FakePlacesClient().search({
+    const candidates = await new FakeRestaurantClient().search({
       center,
       radiusKm: 5,
     });

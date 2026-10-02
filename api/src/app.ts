@@ -1,5 +1,5 @@
 import {
-  FakePlacesClient,
+  FakeRestaurantClient,
   LlmClient,
   createFakeLlmModel,
   PlannerError,
@@ -13,10 +13,10 @@ import {
 } from "@circles/shared";
 import { Hono } from "hono";
 
-// TODO(ai-connector): pass a real AI SDK model to LlmClient and a real PlacesClient.
+// TODO(ai-connector): pass a real AI SDK model to LlmClient and a real RestaurantClient.
 export const defaultDeps = (): PlanDeps => ({
   llm: new LlmClient(createFakeLlmModel()),
-  places: new FakePlacesClient(),
+  restaurants: new FakeRestaurantClient(),
 });
 
 export function createApp(deps: PlanDeps = defaultDeps()) {
