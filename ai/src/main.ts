@@ -1,6 +1,7 @@
 // Dev runner: run the pipeline from the terminal on fakes (npm run dev).
 import type { PlanRequest } from "@circles/shared";
-import { FakePlacesClient, MockLlmClient } from "./fakes.js";
+import { FakePlacesClient, createFakeLlmModel } from "./fakes.js";
+import { LlmClient } from "./llm.js";
 import { planEvent } from "./plan.js";
 
 const day = (offset: number, hour: number, hours: number) => {
@@ -39,7 +40,7 @@ const request: PlanRequest = {
 };
 
 const result = await planEvent(request, {
-  llm: new MockLlmClient(),
+  llm: new LlmClient(createFakeLlmModel()),
   places: new FakePlacesClient(),
 });
 console.log(JSON.stringify(result, null, 2));

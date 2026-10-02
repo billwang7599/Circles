@@ -173,7 +173,6 @@ export async function planEvent(
 
   const fields: SearchFields = {
     ...(parsed.cuisine ? { cuisine: parsed.cuisine } : {}),
-    ...(parsed.tags ? { tags: parsed.tags } : {}),
     partySize: Math.max(parsed.partySize ?? 0, constraints.partySize),
     window,
     maxPriceLevel: constraints.maxPriceLevel,

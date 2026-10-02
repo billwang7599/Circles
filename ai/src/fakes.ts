@@ -1,10 +1,4 @@
-import type {
-  LlmClient,
-  ParseInput,
-  ParsedRequest,
-  RankInput,
-  RankedPick,
-} from "./llm.js";
+import { MockLanguageModelV4 } from "ai/test";
 import type { PlacesClient, PlacesQuery } from "./places.js";
 import type { Candidate, LatLng, OpeningPeriod } from "@circles/shared";
 
@@ -131,25 +125,77 @@ const KNOWN_CUISINES = [
   "pizza",
 ];
 
-/** Deterministic stand-in for the model: keyword matching and rating order. No API key needed. */
-export class MockLlmClient implements LlmClient {
-  async parse({ text }: ParseInput): Promise<ParsedRequest> {
-    const lower = text.toLowerCase();
-    const cuisine = KNOWN_CUISINES.find((c) => lower.includes(c));
-    const size = /for (\d+)/.exec(lower);
-    return {
-      ...(cuisine ? { cuisine } : {}),
-      ...(size ? { partySize: Number(size[1]) } : {}),
-    };
-  }
+export interface FakeLlmOverrides {
+  /** Replace what the fake model answers for the parse call. Receives the request text. */
+  parse?: (text: string) => unknown;
+  /** Replace what the fake model answers for the rank call. Receives the candidates and n. */
+  rank?: (candidates: Candidate[], n: number) => unknown;
+}
 
-  async rank({ candidates, n }: RankInput): Promise<RankedPick[]> {
-    return [...candidates]
-      .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
-      .slice(0, n)
-      .map((c) => ({
-        candidateId: c.id,
-        rationale: `${c.name} is rated ${c.rating ?? "unrated"}.`,
-      }));
-  }
+/** Text of the last user message sent to the model. */
+function userText(prompt: unknown): string {
+  const messages = prompt as { role: string; content: unknown }[];
+  const user = [...messages].reverse().find((m) => m.role === "user");
+  const parts = user?.content as { type: string; text?: string }[] | string;
+  return typeof parts === "string"
+    ? parts
+    : (parts ?? []).map((p) => p.text ?? "").join("");
+}
+
+/**
+ * A deterministic stand-in for a real model, built on the AI SDK's mock model, so the
+ * planner (through LlmClient) runs with no API key. Parse matches cuisine keywords and
+ * "for N"; rank orders by rating. Overrides let a test script bad or unusual answers.
+ */
+export function createFakeLlmModel(overrides: FakeLlmOverrides = {}) {
+  return new MockLanguageModelV4({
+    doGenerate: async ({ prompt }) => {
+      const text = userText(prompt);
+      let answer: unknown;
+      if (text.includes("\nCandidates:\n")) {
+        const candidates = JSON.parse(
+          text.slice(
+            text.indexOf("\nCandidates:\n") + "\nCandidates:\n".length,
+          ),
+        ) as Candidate[];
+        const n = Number(/Pick up to (\d+)/.exec(text)?.[1] ?? 3);
+        answer = overrides.rank
+          ? overrides.rank(candidates, n)
+          : {
+              picks: [...candidates]
+                .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
+                .slice(0, n)
+                .map((c) => ({
+                  candidateId: c.id,
+                  rationale: `${c.name} is rated ${c.rating ?? "unrated"}.`,
+                })),
+            };
+      } else {
+        const request = /Request: (.*)/.exec(text)?.[1] ?? "";
+        const lower = request.toLowerCase();
+        const cuisine = KNOWN_CUISINES.find((c) => lower.includes(c));
+        const size = /for (\d+)/.exec(lower);
+        answer = overrides.parse
+          ? overrides.parse(request)
+          : {
+              ...(cuisine ? { cuisine } : {}),
+              ...(size ? { partySize: Number(size[1]) } : {}),
+            };
+      }
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(answer) }],
+        finishReason: { unified: "stop" as const, raw: undefined },
+        usage: {
+          inputTokens: {
+            total: 1,
+            noCache: 1,
+            cacheRead: undefined,
+            cacheWrite: undefined,
+          },
+          outputTokens: { total: 1, text: 1, reasoning: undefined },
+        },
+        warnings: [],
+      };
+    },
+  });
 }

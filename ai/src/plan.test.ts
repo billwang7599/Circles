@@ -1,7 +1,11 @@
 import type { PlanRequest, User } from "@circles/shared";
 import { describe, expect, test } from "vitest";
-import { FakePlacesClient, MockLlmClient } from "./fakes.js";
-import type { LlmClient } from "./llm.js";
+import {
+  FakePlacesClient,
+  createFakeLlmModel,
+  type FakeLlmOverrides,
+} from "./fakes.js";
+import { LlmClient } from "./llm.js";
 import { PlannerError, planEvent, type PlanDeps } from "./plan.js";
 
 // Saturday 2026-10-03 11:00 local (Toronto, EDT).
@@ -19,8 +23,8 @@ const request = (members: User[], text = "dinner"): PlanRequest => ({
   text,
   group: { city: "toronto", timezone: "America/Toronto", members },
 });
-const deps = (llm: LlmClient = new MockLlmClient()): PlanDeps => ({
-  llm,
+const deps = (overrides: FakeLlmOverrides = {}): PlanDeps => ({
+  llm: new LlmClient(createFakeLlmModel(overrides)),
   places: new FakePlacesClient(),
   now: () => NOW,
 });
@@ -50,9 +54,7 @@ describe("planEvent", () => {
   test("respects a cuisine in the request", async () => {
     const r = await planEvent(request([user()], "ramen dinner"), deps());
     if (r.status !== "ok") throw new Error("expected ok");
-    expect(r.candidates.every((c) => c.cuisines?.includes("ramen"))).toBe(
-      true,
-    );
+    expect(r.candidates.every((c) => c.cuisines?.includes("ramen"))).toBe(true);
   });
 
   test("party size comes from the request when larger than the group", async () => {
@@ -97,30 +99,33 @@ describe("planEvent", () => {
   test("a cuisine with no places gives no_places", async () => {
     const r = await planEvent(
       request([user()], "french dinner"),
-      deps({
-        parse: async () => ({ cuisine: "nonexistent" }),
-        rank: async () => [],
-      }),
+      deps({ parse: () => ({ cuisine: "nonexistent" }) }),
     );
     expect(r).toMatchObject({ status: "no_matches", reason: "no_places" });
   });
 });
 
 describe("planEvent guards against bad model output", () => {
-  const mock = new MockLlmClient();
-
   test("rejects a hallucinated candidate id and retries", async () => {
     let calls = 0;
-    const llm: LlmClient = {
-      parse: (i) => mock.parse(i),
-      rank: async (i) => {
-        calls++;
-        if (calls === 1)
-          return [{ candidateId: "made-up-place", rationale: "Great vibes" }];
-        return mock.rank(i);
-      },
-    };
-    const r = await planEvent(request([user()]), deps(llm));
+    const r = await planEvent(
+      request([user()]),
+      deps({
+        rank: (candidates) => {
+          calls++;
+          if (calls === 1) {
+            return {
+              picks: [
+                { candidateId: "made-up-place", rationale: "Great vibes" },
+              ],
+            };
+          }
+          return {
+            picks: [{ candidateId: candidates[0]!.id, rationale: "Fine." }],
+          };
+        },
+      }),
+    );
     expect(calls).toBe(2);
     if (r.status !== "ok") throw new Error("expected ok");
     expect(r.options.every((o) => o.candidateId !== "made-up-place")).toBe(
@@ -129,53 +134,54 @@ describe("planEvent guards against bad model output", () => {
   });
 
   test("throws PlannerError if the model never returns valid picks", async () => {
-    const llm: LlmClient = {
-      parse: (i) => mock.parse(i),
-      rank: async () => [{ candidateId: "made-up-place", rationale: "x" }],
-    };
     await expect(
-      planEvent(request([user()]), deps(llm)),
+      planEvent(
+        request([user()]),
+        deps({
+          rank: () => ({
+            picks: [{ candidateId: "made-up-place", rationale: "x" }],
+          }),
+        }),
+      ),
     ).rejects.toBeInstanceOf(PlannerError);
   });
 
   test("rejects a place that exists but failed the filters", async () => {
     // fake-5 (price level 4) is over a low budget, so it is not in the filtered set.
-    const llm: LlmClient = {
-      parse: (i) => mock.parse(i),
-      rank: async () => [{ candidateId: "fake-5", rationale: "Fancy" }],
-    };
     await expect(
-      planEvent(request([user({ budget: 10 })]), deps(llm)),
+      planEvent(
+        request([user({ budget: 10 })]),
+        deps({
+          rank: () => ({
+            picks: [{ candidateId: "fake-5", rationale: "Fancy" }],
+          }),
+        }),
+      ),
     ).rejects.toBeInstanceOf(PlannerError);
   });
 
   test("rejects duplicate picks and malformed output", async () => {
-    const llm: LlmClient = {
-      parse: (i) => mock.parse(i),
-      rank: async () => [
-        { candidateId: "fake-1", rationale: "a" },
-        { candidateId: "fake-1", rationale: "b" },
-      ],
-    };
     await expect(
-      planEvent(request([user()]), deps(llm)),
+      planEvent(
+        request([user()]),
+        deps({
+          rank: () => ({
+            picks: [
+              { candidateId: "fake-1", rationale: "a" },
+              { candidateId: "fake-1", rationale: "b" },
+            ],
+          }),
+        }),
+      ),
     ).rejects.toBeInstanceOf(PlannerError);
-    const bad: LlmClient = {
-      parse: (i) => mock.parse(i),
-      rank: async () => "nope" as never,
-    };
     await expect(
-      planEvent(request([user()]), deps(bad)),
+      planEvent(request([user()]), deps({ rank: () => "nope" })),
     ).rejects.toBeInstanceOf(PlannerError);
   });
 
   test("retries an invalid parse, then throws PlannerError", async () => {
-    const llm: LlmClient = {
-      parse: async () => ({ partySize: -2 }) as never,
-      rank: (i) => mock.rank(i),
-    };
     await expect(
-      planEvent(request([user()]), deps(llm)),
+      planEvent(request([user()]), deps({ parse: () => ({ partySize: -2 }) })),
     ).rejects.toBeInstanceOf(PlannerError);
   });
 
@@ -184,15 +190,16 @@ describe("planEvent guards against bad model output", () => {
       start: "2026-10-03T22:00:00Z",
       end: "2026-10-04T02:00:00Z",
     };
-    const llm: LlmClient = {
-      parse: async () => ({
-        window: { start: "2026-10-03T23:00:00Z", end: "2026-10-04T01:00:00Z" },
-      }),
-      rank: (i) => mock.rank(i),
-    };
     const r = await planEvent(
       request([user({ unavailable: [blocked] })]),
-      deps(llm),
+      deps({
+        parse: () => ({
+          window: {
+            start: "2026-10-03T23:00:00Z",
+            end: "2026-10-04T01:00:00Z",
+          },
+        }),
+      }),
     );
     expect(r).toMatchObject({ status: "no_matches", reason: "no_free_time" });
   });

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { FakePlacesClient, MockLlmClient } from "./fakes.js";
-import { ParsedRequestSchema, RankedPickSchema } from "./llm.js";
+import { FakePlacesClient, createFakeLlmModel } from "./fakes.js";
+import { LlmClient, ParsedRequestSchema, RankedPickSchema } from "./llm.js";
 
 const center = { lat: 43.65, lng: -79.38 };
 
@@ -24,8 +24,8 @@ describe("FakePlacesClient", () => {
   });
 });
 
-describe("MockLlmClient", () => {
-  const llm = new MockLlmClient();
+describe("fake LLM model through LlmClient", () => {
+  const llm = new LlmClient(createFakeLlmModel());
   test("parse output matches the schema", async () => {
     const out = await llm.parse({
       text: "italian dinner for 5",
