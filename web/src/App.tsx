@@ -1,14 +1,17 @@
 import { CITIES } from "@circles/shared";
 import { useState } from "react";
 import { PlanNow } from "./PlanNow";
+import { SavedPlans } from "./SavedPlans";
 import { UserForm } from "./UserForm";
 import { makeSampleUsers } from "./sampleUsers";
 import { useCity } from "./useCity";
+import { usePlans } from "./usePlans";
 import { useUsers } from "./useUsers";
 
 export default function App() {
   const { users, addUser, addUsers, removeUser } = useUsers();
   const { city, setCityId } = useCity();
+  const { plans, addPlan, removePlan, clearPlans } = usePlans();
   const [adding, setAdding] = useState(false);
   const [planning, setPlanning] = useState(false);
 
@@ -67,8 +70,15 @@ export default function App() {
       </button>
 
       {planning && (
-        <PlanNow users={users} city={city} onClose={() => setPlanning(false)} />
+        <PlanNow
+          users={users}
+          city={city}
+          onSave={addPlan}
+          onClose={() => setPlanning(false)}
+        />
       )}
+
+      <SavedPlans plans={plans} onRemove={removePlan} onClear={clearPlans} />
 
       <ul className="space-y-2">
         {users.map((u) => (

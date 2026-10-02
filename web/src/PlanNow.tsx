@@ -1,5 +1,7 @@
-import type { City, PlanResponse, User } from "@circles/shared";
+import type { City, PlanJob, User } from "@circles/shared";
 import { useState } from "react";
+import { PlanOutcome } from "./PlanOutcome";
+import type { SavedOutcome, SavedPlan } from "./savedPlan";
 
 interface EventType {
   id: string;
@@ -33,10 +35,12 @@ const EVENT_TYPES: EventType[] = [
 export function PlanNow({
   users,
   city,
+  onSave,
   onClose,
 }: {
   users: User[];
   city: City;
+  onSave: (plan: SavedPlan) => void;
   onClose: () => void;
 }) {
   const [chosen, setChosen] = useState<EventType | null>(null);
@@ -58,7 +62,12 @@ export function PlanNow({
         </div>
 
         {chosen ? (
-          <PlanForm users={users} city={city} onBack={() => setChosen(null)} />
+          <PlanForm
+            users={users}
+            city={city}
+            onSave={onSave}
+            onBack={() => setChosen(null)}
+          />
         ) : (
           <ul className="space-y-2">
             {EVENT_TYPES.map((t) => (
@@ -90,40 +99,62 @@ export function PlanNow({
 function PlanForm({
   users,
   city,
+  onSave,
   onBack,
 }: {
   users: User[];
   city: City;
+  onSave: (plan: SavedPlan) => void;
   onBack: () => void;
 }) {
   const [text, setText] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PlanResponse | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [started, setStarted] = useState<SavedOutcome | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setResult(null);
+    const request = text.trim() || "dinner";
+    setSubmitting(true);
+    setStarted(null);
+    let id: string = crypto.randomUUID();
+    let outcome: SavedOutcome;
     try {
-      const res = await fetch("/api/plan", {
+      const res = await fetch("/api/plans", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          text: text.trim() || "dinner",
+          text: request,
           group: { city: city.id, timezone: city.timezone, members: users },
         }),
       });
       const body = await res.json();
       if (!res.ok)
         throw new Error(body.error ?? `Request failed (${res.status})`);
-      setResult(body);
+      // The server returns at once. The result arrives later over the event stream.
+      id = (body as PlanJob).id;
+      outcome = { status: "pending" };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setLoading(false);
+      outcome = {
+        status: "error",
+        message:
+          err instanceof TypeError
+            ? "Couldn't reach the planner. Is the api running?"
+            : err instanceof Error
+              ? err.message
+              : "Something went wrong",
+      };
     }
+    // Every attempt is kept, including ones that failed to start.
+    onSave({
+      id,
+      createdAt: new Date().toISOString(),
+      request,
+      cityName: city.name,
+      members: users.length,
+      outcome,
+    });
+    setStarted(outcome);
+    setSubmitting(false);
   }
 
   return (
@@ -142,10 +173,10 @@ function PlanForm({
         <div className="flex gap-2">
           <button
             type="submit"
-            disabled={loading}
+            disabled={submitting}
             className="rounded bg-emerald-600 px-3 py-1.5 text-white disabled:opacity-50"
           >
-            {loading ? "Planning..." : "Find options"}
+            {submitting ? "Starting..." : "Find options"}
           </button>
           <button
             type="button"
@@ -157,42 +188,13 @@ function PlanForm({
         </div>
       </form>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
-
-      {result?.status === "no_matches" && (
-        <p className="text-sm text-amber-700">{result.message}</p>
+      {started?.status === "pending" && (
+        <p className="text-sm text-slate-600">
+          Planning in the background. You can close this. The result will appear
+          under Saved plans when it's ready.
+        </p>
       )}
-
-      {result?.status === "ok" && (
-        <ul className="space-y-2">
-          {result.options.map((o) => {
-            const place = result.candidates.find((c) => c.id === o.candidateId);
-            return (
-              <li
-                key={o.candidateId}
-                className="rounded border border-slate-200 p-3"
-              >
-                <div className="font-medium">
-                  {place?.name ?? o.candidateId}
-                </div>
-                <p className="text-sm">{o.rationale}</p>
-                <ul className="mt-1 list-disc pl-5 text-xs text-slate-600">
-                  {o.constraintChecks.map((c) => (
-                    <li
-                      key={c}
-                      className={
-                        c.includes("unverified") ? "text-amber-700" : ""
-                      }
-                    >
-                      {c}
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {started?.status === "error" && <PlanOutcome outcome={started} />}
     </div>
   );
 }
