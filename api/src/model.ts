@@ -2,8 +2,9 @@ import { createFakeLlmModel } from "@circles/ai";
 import type { LanguageModel } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 
-// Not chosen on evidence yet: pick the model by running the eval fixtures against candidates.
-const DEFAULT_MODEL = "@cf/zai-org/glm-4.7-flash";
+// Picked from scripts/benchmark-models.ts: non-reasoning, so a call takes seconds and
+// uses about 100 output tokens. Reasoning models spent 10x more time and tokens here.
+const DEFAULT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 /**
  * The model the planner runs on. Cloudflare Workers AI over its REST API when the

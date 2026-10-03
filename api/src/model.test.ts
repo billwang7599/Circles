@@ -13,7 +13,7 @@ describe("createModel", () => {
     expect(description).toContain("Cloudflare Workers AI");
     expect(typeof model).toBe("object");
     expect((model as { modelId: string }).modelId).toBe(
-      "@cf/zai-org/glm-4.7-flash",
+      "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     );
   });
   test("CLOUDFLARE_MODEL overrides the default model", () => {
