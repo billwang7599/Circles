@@ -1,4 +1,9 @@
-import type { PlanJob, PlanResponse, TimeWindow } from "@circles/shared";
+import type {
+  PlanJob,
+  PlanRequest,
+  PlanResponse,
+  TimeWindow,
+} from "@circles/shared";
 
 export interface SavedOption {
   candidateId: string;
@@ -21,6 +26,13 @@ export type SavedOutcome =
   | { status: "no_matches"; message: string }
   | { status: "error"; message: string };
 
+export interface ChatMessage {
+  role: "user" | "assistant";
+  text: string;
+  /** What the planner changed, in plain words. Written by code, not the model. */
+  changes?: string[];
+}
+
 /** A planning attempt, kept whether or not it found anything. */
 export interface SavedPlan {
   id: string;
@@ -34,6 +46,11 @@ export interface SavedPlan {
   timezone?: string;
   members: number;
   outcome: SavedOutcome;
+  /** The request as sent, so the chat can change it. Missing on older saved plans. */
+  params?: PlanRequest;
+  /** The background run being watched. A chat change starts a new one for the same plan. */
+  jobId?: string;
+  chat?: ChatMessage[];
 }
 
 /** Keep only what the list needs, so many plans fit in localStorage. */

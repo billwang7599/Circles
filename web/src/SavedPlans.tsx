@@ -1,3 +1,4 @@
+import { PlanChat } from "./PlanChat";
 import { PlanOutcome } from "./PlanOutcome";
 import type { SavedPlan } from "./savedPlan";
 import { Chip, btn } from "./ui";
@@ -18,10 +19,12 @@ function status(p: SavedPlan) {
 export function SavedPlans({
   plans,
   onRemove,
+  onUpdate,
   onClear,
 }: {
   plans: SavedPlan[];
   onRemove: (id: string) => void;
+  onUpdate: (id: string, patch: Partial<SavedPlan>) => void;
   onClear: () => void;
 }) {
   return (
@@ -67,6 +70,10 @@ export function SavedPlans({
                 </summary>
                 <div className="space-y-3 pb-4">
                   <PlanOutcome outcome={p.outcome} timezone={p.timezone} />
+                  <PlanChat
+                    plan={p}
+                    onUpdate={(patch) => onUpdate(p.id, patch)}
+                  />
                   <button className={btn.danger} onClick={() => onRemove(p.id)}>
                     Delete this plan
                   </button>

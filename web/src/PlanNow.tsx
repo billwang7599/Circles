@@ -6,6 +6,7 @@ import {
   type FilterModes,
   type FilterName,
   type PlanJob,
+  type PlanRequest,
   type User,
 } from "@circles/shared";
 import { useEffect, useState } from "react";
@@ -174,19 +175,20 @@ function PlanForm({
     const request = text.trim() || "dinner";
     setSubmitting(true);
     setStarted(null);
+    const params: PlanRequest = {
+      text: request,
+      group: { members: users },
+      location: cityLocation(city),
+      radiusKm: Number(radius),
+      filterModes: modes,
+    };
     let id: string = crypto.randomUUID();
     let outcome: SavedOutcome;
     try {
       const res = await fetch("/api/plans", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          text: request,
-          group: { members: users },
-          location: cityLocation(city),
-          radiusKm: Number(radius),
-          filterModes: modes,
-        }),
+        body: JSON.stringify(params),
       });
       const body = await res.json();
       if (!res.ok)
@@ -214,6 +216,8 @@ function PlanForm({
       timezone: city.timezone,
       members: users.length,
       outcome,
+      params,
+      ...(outcome.status === "pending" ? { jobId: id } : {}),
     });
     setStarted(outcome);
     setSubmitting(false);

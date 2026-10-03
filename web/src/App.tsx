@@ -9,7 +9,7 @@ import { useUsers } from "./useUsers";
 
 export default function App() {
   const { users, addUser, addUsers, removeUser } = useUsers();
-  const { plans, addPlan, removePlan, clearPlans } = usePlans();
+  const { plans, addPlan, updatePlan, removePlan, clearPlans } = usePlans();
   const [adding, setAdding] = useState(false);
   const [planning, setPlanning] = useState(false);
 
@@ -94,7 +94,12 @@ export default function App() {
           )}
         </section>
 
-        <SavedPlans plans={plans} onRemove={removePlan} onClear={clearPlans} />
+        <SavedPlans
+          plans={plans}
+          onRemove={removePlan}
+          onUpdate={updatePlan}
+          onClear={clearPlans}
+        />
       </main>
 
       {planning && (
