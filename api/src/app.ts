@@ -1,10 +1,12 @@
 import {
   LlmClient,
   PlannerError,
+  changePlan,
   RequestLimitError,
   planEvent,
   type PlanDeps,
 } from "@circles/ai";
+import { z } from "zod";
 import {
   PlanRequestSchema,
   type PlanJob,
@@ -82,6 +84,46 @@ export function createApp(
     const read = await readRequest(c);
     if (read.error) return read.error;
     return c.json(store.submit(read.request), 202);
+  });
+
+  // Chat about a plan. The message is read as a change to the plan's request; if anything
+  // changed, a new run starts straight away and its job is returned to watch.
+  app.post("/plans/chat", async (c) => {
+    const body = await c.req.json().catch(() => undefined);
+    const parsed = z
+      .object({
+        message: z.string().trim().min(1).max(500),
+        request: PlanRequestSchema,
+      })
+      .safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { error: "invalid request", issues: parsed.error.issues },
+        400,
+      );
+    }
+    try {
+      const change = await changePlan(
+        parsed.data.request,
+        parsed.data.message,
+        deps.llm,
+      );
+      if (change.changes.length === 0) {
+        return c.json({ changed: false, changes: [], request: change.request });
+      }
+      return c.json(
+        {
+          changed: true,
+          changes: change.changes,
+          request: change.request,
+          job: store.submit(change.request),
+        },
+        202,
+      );
+    } catch (e) {
+      if (e instanceof PlannerError) return c.json({ error: e.message }, 502);
+      throw e;
+    }
   });
 
   app.get("/plans/:id", (c) => {

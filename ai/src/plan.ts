@@ -11,7 +11,9 @@ import {
 import { z } from "zod";
 import {
   availableTimes,
+  filterSlotsByWhen,
   generateSlots,
+  slotOptionsForWhen,
   type SlotOptions,
 } from "./availability.ts";
 import { deriveConstraints } from "./constraints.ts";
@@ -23,6 +25,7 @@ import {
   type RankedPick,
 } from "./llm.ts";
 import type { RestaurantClient } from "./restaurants.ts";
+import { validated } from "./validated.ts";
 
 export interface PlanDeps {
   llm: LlmClient;
@@ -52,11 +55,9 @@ export type PlanResult =
     }
   | { status: "no_matches"; reason: NoMatchReason; message: string };
 
-/** The LLM kept returning output that failed validation. Never fall back to unchecked output. */
-export class PlannerError extends Error {}
+export { PlannerError } from "./validated.ts";
 
 const SEARCH_DAYS = 14;
-const MAX_ATTEMPTS = 3;
 const DAY_MS = 24 * 3600_000;
 
 const NO_MATCH_MESSAGES: Record<NoMatchReason, string> = {
@@ -69,30 +70,11 @@ const NO_MATCH_MESSAGES: Record<NoMatchReason, string> = {
   partySize: "Every place found is too small for the group.",
 };
 
-const noMatches = (reason: NoMatchReason): PlanResult => ({
+const noMatches = (reason: NoMatchReason, message?: string): PlanResult => ({
   status: "no_matches",
   reason,
-  message: NO_MATCH_MESSAGES[reason],
+  message: message ?? NO_MATCH_MESSAGES[reason],
 });
-
-/** Call the model, validate its output, and retry on anything invalid. */
-async function validated<T>(
-  call: () => Promise<unknown>,
-  check: (raw: unknown) => T,
-  what: string,
-): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    try {
-      return check(await call());
-    } catch (e) {
-      lastError = e;
-    }
-  }
-  throw new PlannerError(
-    `${what} failed validation after ${MAX_ATTEMPTS} attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
-  );
-}
 
 const FILTER_LABELS: Record<FilterName, string> = {
   budget: "Budget",
@@ -177,22 +159,38 @@ export async function planEvent(
   { n = 3, slots: slotOptions, onProgress }: PlanOptions = {},
 ): Promise<PlanResult> {
   const request = PlanRequestSchema.parse(rawRequest);
-  const { group, location, radiusKm, filterModes } = request;
+  const { group, location, radiusKm, filterModes, when, budgetPerPerson } =
+    request;
   const center = { lat: location.lat, lng: location.lng };
   const now = (deps.now ?? (() => new Date()))();
-  const constraints = deriveConstraints(group, {
-    start: now.toISOString(),
-    end: new Date(now.getTime() + SEARCH_DAYS * DAY_MS).toISOString(),
-  });
+  const constraints = deriveConstraints(
+    group,
+    {
+      start: now.toISOString(),
+      end: new Date(now.getTime() + SEARCH_DAYS * DAY_MS).toISOString(),
+    },
+    budgetPerPerson,
+  );
 
   // Opening hours and mealtimes are read in the search location's time zone. Members'
   // own zones only matter when they enter times, which are stored as UTC.
-  const slots = generateSlots(
-    constraints.freeWindows,
+  const slots = filterSlotsByWhen(
+    generateSlots(constraints.freeWindows, location.timezone, {
+      ...slotOptionsForWhen(when),
+      ...slotOptions,
+    }),
+    when,
     location.timezone,
-    slotOptions,
+    now,
   );
-  if (slots.length === 0) return noMatches("no_free_time");
+  if (slots.length === 0) {
+    return noMatches(
+      "no_free_time",
+      when
+        ? "No time on the days you asked for when everyone is free."
+        : undefined,
+    );
+  }
 
   const fields: SearchFields = {
     query: request.text,

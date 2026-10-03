@@ -190,3 +190,56 @@ describe("background plans", () => {
     await reader.cancel();
   });
 });
+
+describe("POST /plans/chat", () => {
+  const request = { text: "buffet", group, location, radiusKm: 15 };
+  const chat = (message: string, over: Record<string, unknown> = {}) =>
+    app.request("/plans/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message, request, ...over }),
+    });
+
+  test("a change request returns the changes and starts a new run", async () => {
+    const res = await chat(
+      "find hotpot instead of buffet, on sunday, with an increased budget",
+    );
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body.changed).toBe(true);
+    expect(body.request.text).toBe("hotpot");
+    expect(body.request.when.days).toEqual(["sunday"]);
+    expect(body.request.budgetPerPerson).toBe(60); // 40 * 1.5
+    expect(body.changes).toHaveLength(3);
+    expect(body.job.id).toBeTruthy();
+    expect((await app.request(`/plans/${body.job.id}`)).status).toBe(200);
+  });
+
+  test("a message that asks for nothing changes nothing and starts no run", async () => {
+    const res = await chat("thanks!");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ changed: false, changes: [] });
+    expect(body.job).toBeUndefined();
+  });
+
+  test("rejects an empty message or a missing request", async () => {
+    expect((await chat("   ")).status).toBe(400);
+    expect((await chat("hello", { request: undefined })).status).toBe(400);
+  });
+
+  test("a model that never gives a usable answer is a 502", async () => {
+    const broken = createApp({
+      llm: new LlmClient(
+        createFakeLlmModel({ interpret: () => ({ radiusKm: 9999 }) }),
+      ),
+      restaurants: new FakeRestaurantClient(),
+    });
+    const res = await broken.request("/plans/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "bigger radius", request }),
+    });
+    expect(res.status).toBe(502);
+  });
+});

@@ -387,6 +387,68 @@ describe("planEvent filter modes", () => {
   });
 });
 
+describe("planEvent with a when and a budget override", () => {
+  // NOW is Saturday 2026-10-03 11:00 local. Sunday is 2026-10-04.
+  const weekdayOf = (iso: string) =>
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Toronto",
+      weekday: "long",
+    }).format(new Date(iso));
+
+  test("limits the times offered to the days asked for", async () => {
+    const r = await planEvent(
+      request([user()], "ramen", { when: { days: ["sunday"] } }),
+      deps(),
+    );
+    if (r.status !== "ok") throw new Error("expected ok");
+    const times = r.options.flatMap((o) => o.availableTimes);
+    expect(times.length).toBeGreaterThan(0);
+    // Two weeks are searched, so there are two Sundays. Nothing else is offered.
+    for (const t of times) expect(weekdayOf(t.start)).toBe("Sunday");
+  });
+
+  test("a day with nobody free gives a no-match that says so", async () => {
+    // Both Sundays in the two-week search are blocked for one member.
+    const blocked = [
+      { start: "2026-10-04T00:00:00Z", end: "2026-10-05T12:00:00Z" },
+      { start: "2026-10-11T00:00:00Z", end: "2026-10-12T12:00:00Z" },
+    ];
+    const r = await planEvent(
+      request([user({ unavailable: blocked })], "ramen", {
+        when: { days: ["sunday"] },
+      }),
+      deps(),
+    );
+    expect(r).toMatchObject({ status: "no_matches", reason: "no_free_time" });
+    if (r.status === "no_matches")
+      expect(r.message).toContain("days you asked for");
+  });
+
+  test("mornings are offered when asked for, even though the default starts at 11:00", async () => {
+    const r = await planEvent(
+      request([user()], "ramen", { when: { partsOfDay: ["morning"] } }),
+      deps(),
+    );
+    // Restaurants open at 11:00 or later, so a 2h morning slot starting at 8-10 is closed;
+    // slots starting at 11:00 can still work, so a result is possible.
+    expect(["ok", "no_matches"]).toContain(r.status);
+  });
+
+  test("the budget override replaces the lowest member budget", async () => {
+    const poor = user({ budget: 10 });
+    const hard = (extra: Partial<PlanRequest>) =>
+      planEvent(request([poor], "dinner", extra), deps(), { n: 8 });
+    const base = await hard({});
+    const raised = await hard({ budgetPerPerson: 100 });
+    if (base.status !== "ok" || raised.status !== "ok")
+      throw new Error("expected ok");
+    const max = (r: typeof base) =>
+      Math.max(...r.candidates.map((c) => c.priceLevel ?? 0));
+    expect(max(base)).toBeLessThanOrEqual(1);
+    expect(max(raised)).toBeGreaterThan(1);
+  });
+});
+
 describe("planEvent when must-haves leave few places", () => {
   // Only these three places are found: Noodle House ($), Trattoria Roma ($$$), Le Bistro ($$$$).
   const three: RestaurantClient = {

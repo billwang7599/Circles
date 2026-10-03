@@ -28,12 +28,14 @@ export interface GroupConstraints {
 export function deriveConstraints(
   group: GroupContext,
   range: TimeWindow,
+  /** Replaces the lowest member budget when the planner set one. */
+  budgetPerPerson?: number,
 ): GroupConstraints {
   const { members } = group;
   return {
     partySize: members.length,
     maxPriceLevel: priceLevelForBudget(
-      Math.min(...members.map((m) => m.budget)),
+      budgetPerPerson ?? Math.min(...members.map((m) => m.budget)),
     ),
     freeWindows: subtractIntervals(
       range,

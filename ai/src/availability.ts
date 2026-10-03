@@ -6,7 +6,10 @@ import {
   type AvailabilitySlot,
   type Candidate,
   type OpeningPeriod,
+  type PartOfDay,
   type TimeWindow,
+  type When,
+  WEEKDAYS,
 } from "@circles/shared";
 
 export interface SlotOptions {
@@ -96,4 +99,79 @@ export function availableTimes(
   return mergeIntervals(
     open.map((s) => ({ start: s.start, end: s.end })),
   ).slice(0, maxRanges);
+}
+
+/** Local start hours each part of the day covers, inclusive. */
+export const PART_HOURS: Record<PartOfDay, [number, number]> = {
+  morning: [8, 11],
+  afternoon: [12, 16],
+  evening: [17, 21],
+};
+
+/**
+ * Slot hours to generate for a "when". Asking for mornings needs slots before the default
+ * 11:00 start, so the range widens to cover every part asked for.
+ */
+export function slotOptionsForWhen(when: When | undefined): SlotOptions {
+  const parts = when?.partsOfDay ?? [];
+  if (parts.length === 0) return {};
+  const ranges = parts.map((p) => PART_HOURS[p]);
+  return {
+    earliestHour: Math.min(...ranges.map((r) => r[0])),
+    latestStartHour: Math.max(...ranges.map((r) => r[1])),
+  };
+}
+
+/** The date in the zone as "YYYY-MM-DD". */
+function localDate(ms: number, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ms));
+}
+
+function addDays(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * Keep only slots on the days and in the parts of the day asked for. Days such as
+ * "tomorrow" and "weekend" are resolved here, from the clock and the zone, so the
+ * model never does date arithmetic.
+ */
+export function filterSlotsByWhen(
+  slots: AvailabilitySlot[],
+  when: When | undefined,
+  timezone: string,
+  now: Date,
+): AvailabilitySlot[] {
+  const days = when?.days ?? [];
+  const parts = when?.partsOfDay ?? [];
+  if (days.length === 0 && parts.length === 0) return slots;
+
+  const today = localDate(now.getTime(), timezone);
+  const tomorrow = addDays(today, 1);
+  const weekdayOk = (weekday: number, date: string) =>
+    days.length === 0 ||
+    days.some((d) => {
+      if (d === "today") return date === today;
+      if (d === "tomorrow") return date === tomorrow;
+      if (d === "weekend") return weekday === 0 || weekday === 6;
+      if (d === "weekdays") return weekday >= 1 && weekday <= 5;
+      return WEEKDAYS.indexOf(d) === weekday;
+    });
+
+  return slots.filter((slot) => {
+    const weekday = Math.floor(slot.startMin / 1440) % 7;
+    const hour = Math.floor((slot.startMin % 1440) / 60);
+    const date = localDate(Date.parse(slot.start), timezone);
+    return (
+      weekdayOk(weekday, date) &&
+      (parts.length === 0 ||
+        parts.some((p) => hour >= PART_HOURS[p][0] && hour <= PART_HOURS[p][1]))
+    );
+  });
 }

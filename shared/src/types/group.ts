@@ -2,6 +2,7 @@ import { z } from "zod";
 import { LocationSchema } from "./city.ts";
 import { FilterModesSchema } from "./filters.ts";
 import { UserSchema } from "./user.ts";
+import { WhenSchema } from "./when.ts";
 
 export const GroupContextSchema = z.object({
   members: z.array(UserSchema).min(1),
@@ -24,5 +25,9 @@ export const PlanRequestSchema = z.object({
   radiusKm: z.number().positive().max(MAX_RADIUS_KM).default(DEFAULT_RADIUS_KM),
   /** For each filter, whether it must be met or only preferred. See filters.ts for the defaults. */
   filterModes: FilterModesSchema.prefault({}),
+  /** Limit to certain days or times of day. Missing means any time everyone is free. */
+  when: WhenSchema.optional(),
+  /** Overrides the group budget, which is otherwise the lowest member budget. */
+  budgetPerPerson: z.number().nonnegative().optional(),
 });
 export type PlanRequest = z.infer<typeof PlanRequestSchema>;
