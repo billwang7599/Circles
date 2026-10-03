@@ -1,4 +1,4 @@
-import { UserSchema, type User } from "@circles/shared";
+import { CITIES, UserSchema, cityLocation, type User } from "@circles/shared";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 
@@ -7,7 +7,14 @@ const KEY = "circles.users";
 function load(): User[] {
   try {
     const raw = localStorage.getItem(KEY);
-    const parsed = z.array(UserSchema).safeParse(raw ? JSON.parse(raw) : []);
+    const stored: unknown[] = raw ? JSON.parse(raw) : [];
+    // Users saved before locations existed get a default one, so they aren't lost.
+    const withLocation = stored.map((u) =>
+      u && typeof u === "object" && !("location" in u)
+        ? { ...u, location: cityLocation(CITIES[0]!) }
+        : u,
+    );
+    const parsed = z.array(UserSchema).safeParse(withLocation);
     return parsed.success ? parsed.data : [];
   } catch {
     return []; // storage blocked or corrupt: start empty

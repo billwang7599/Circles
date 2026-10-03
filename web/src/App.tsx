@@ -1,108 +1,109 @@
-import { CITIES } from "@circles/shared";
 import { useState } from "react";
 import { PlanNow } from "./PlanNow";
 import { SavedPlans } from "./SavedPlans";
 import { UserForm } from "./UserForm";
 import { makeSampleUsers } from "./sampleUsers";
-import { useCity } from "./useCity";
+import { Avatar, AvatarStack, Wordmark, btn } from "./ui";
 import { usePlans } from "./usePlans";
 import { useUsers } from "./useUsers";
 
 export default function App() {
   const { users, addUser, addUsers, removeUser } = useUsers();
-  const { city, setCityId } = useCity();
   const { plans, addPlan, removePlan, clearPlans } = usePlans();
   const [adding, setAdding] = useState(false);
   const [planning, setPlanning] = useState(false);
 
   return (
-    <main className="mx-auto max-w-xl space-y-6 p-6">
-      <h1 className="text-3xl font-bold">Circles</h1>
-
-      <label className="block text-sm">
-        City
-        <select
-          className="w-full rounded border border-slate-300 px-2 py-1"
-          value={city.id}
-          onChange={(e) => setCityId(e.target.value)}
+    <div className="mx-auto max-w-5xl px-4 pb-16 sm:px-6">
+      <header className="flex items-center justify-between gap-4 py-6">
+        <Wordmark />
+        <button
+          className={btn.primary}
+          disabled={users.length === 0}
+          title={
+            users.length === 0 ? "Add at least one person first" : undefined
+          }
+          onClick={() => setPlanning(true)}
         >
-          {CITIES.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <span className="text-slate-600">Timezone: {city.timezone}</span>
-      </label>
+          Plan now
+        </button>
+      </header>
 
-      {adding ? (
-        <UserForm
-          onSave={(u) => {
-            addUser(u);
-            setAdding(false);
-          }}
-          onCancel={() => setAdding(false)}
-        />
-      ) : (
-        <div className="flex gap-2">
-          <button
-            className="rounded bg-indigo-600 px-3 py-1.5 text-white"
-            onClick={() => setAdding(true)}
-          >
-            Add user
-          </button>
-          <button
-            className="rounded border border-slate-300 px-3 py-1.5"
-            onClick={() => addUsers(makeSampleUsers())}
-          >
-            Add sample users
-          </button>
-        </div>
-      )}
+      <main className="grid gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <section aria-labelledby="group-heading" className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="group-heading" className="font-display text-xl font-bold">
+              Your group
+            </h2>
+            {users.length > 0 && (
+              <AvatarStack names={users.map((u) => u.name)} />
+            )}
+          </div>
 
-      <button
-        className="rounded bg-emerald-600 px-3 py-1.5 text-white disabled:opacity-50"
-        disabled={users.length === 0}
-        title={users.length === 0 ? "Add at least one user first" : undefined}
-        onClick={() => setPlanning(true)}
-      >
-        Plan Now
-      </button>
+          {adding ? (
+            <UserForm
+              onSave={(u) => {
+                addUser(u);
+                setAdding(false);
+              }}
+              onCancel={() => setAdding(false)}
+            />
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <button className={btn.secondary} onClick={() => setAdding(true)}>
+                Add a person
+              </button>
+              <button
+                className={btn.quiet}
+                onClick={() => addUsers(makeSampleUsers())}
+              >
+                Add a sample group
+              </button>
+            </div>
+          )}
+
+          {users.length === 0 && !adding ? (
+            <p className="max-w-sm text-sm text-ink-soft">
+              No one here yet. Add the people you plan with, along with their
+              budget and the times they're busy. Or load a sample group to try
+              things out.
+            </p>
+          ) : (
+            <ul className="divide-y divide-line border-y border-line">
+              {users.map((u) => (
+                <li key={u.id} className="flex items-center gap-3 py-3">
+                  <Avatar name={u.name} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium">{u.name}</div>
+                    <div className="text-xs text-ink-soft">
+                      {u.location.name}, budget {u.budget},{" "}
+                      {u.unavailable.length === 0
+                        ? "free all the time"
+                        : `busy ${u.unavailable.length} time${u.unavailable.length === 1 ? "" : "s"}`}
+                    </div>
+                  </div>
+                  <button
+                    className={btn.danger}
+                    onClick={() => removeUser(u.id)}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <SavedPlans plans={plans} onRemove={removePlan} onClear={clearPlans} />
+      </main>
 
       {planning && (
         <PlanNow
           users={users}
-          city={city}
           onSave={addPlan}
           onClose={() => setPlanning(false)}
         />
       )}
-
-      <SavedPlans plans={plans} onRemove={removePlan} onClear={clearPlans} />
-
-      <ul className="space-y-2">
-        {users.map((u) => (
-          <li
-            key={u.id}
-            className="flex items-center justify-between rounded border border-slate-200 bg-white p-3"
-          >
-            <div>
-              <div className="font-medium">{u.name}</div>
-              <div className="text-sm text-slate-600">
-                Budget {u.budget} · within {u.maxDistanceKm} km ·{" "}
-                {u.unavailable.length} unavailable block
-                {u.unavailable.length === 1 ? "" : "s"}
-              </div>
-            </div>
-            <button
-              className="text-sm text-red-600"
-              onClick={() => removeUser(u.id)}
-            >
-              Remove
-            </button>
-          </li>
-        ))}
-      </ul>
-    </main>
+    </div>
   );
 }
