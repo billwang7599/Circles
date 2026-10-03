@@ -1,5 +1,5 @@
 // Dev runner: run the pipeline from the terminal on fakes (npm run dev).
-import type { PlanRequest } from "@circles/shared";
+import { cityLocation, findCity, type PlanRequest } from "@circles/shared";
 import { FakeRestaurantClient, createFakeLlmModel } from "./fakes.ts";
 import { LlmClient } from "./llm.ts";
 import { planEvent } from "./plan.ts";
@@ -14,25 +14,39 @@ const day = (offset: number, hour: number, hours: number) => {
   };
 };
 
+const toronto = cityLocation(findCity("toronto")!);
+
 const request: PlanRequest = {
-  text: process.argv.slice(2).join(" ") || "dinner for 3",
+  text: process.argv.slice(2).join(" ") || "dinner",
+  location: toronto,
+  radiusKm: 15,
+  filterModes: {
+    budget: "hard",
+    openHours: "hard",
+    partySize: "hard",
+    area: "prefer",
+  },
   group: {
-    city: "toronto",
-    timezone: "America/Toronto",
     members: [
       {
         id: "1",
         name: "Alex",
+        location: toronto,
         budget: 30,
-        maxDistanceKm: 5,
         unavailable: [day(1, 14, 8)],
       },
-      { id: "2", name: "Sam", budget: 40, maxDistanceKm: 10, unavailable: [] },
+      {
+        id: "2",
+        name: "Sam",
+        location: toronto,
+        budget: 40,
+        unavailable: [],
+      },
       {
         id: "3",
         name: "Jordan",
+        location: toronto,
         budget: 60,
-        maxDistanceKm: 8,
         unavailable: [],
       },
     ],

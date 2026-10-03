@@ -74,6 +74,53 @@ export function weekMinutes(iso: string, timeZone: string): number {
   return day * 1440 + Number(get("hour")) * 60 + Number(get("minute"));
 }
 
+/** How far the zone is ahead of UTC at the given instant, in ms. */
+function zoneOffsetMs(utcMs: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(utcMs));
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  const asUtc = Date.UTC(
+    get("year"),
+    get("month") - 1,
+    get("day"),
+    get("hour"),
+    get("minute"),
+    get("second"),
+  );
+  return asUtc - Math.floor(utcMs / 1000) * 1000;
+}
+
+/**
+ * Turn a wall-clock time in a zone, such as "2026-10-03T18:00" entered by someone in
+ * Toronto, into the UTC instant everything else stores. A time that does not exist
+ * (spring forward) or happens twice (fall back) resolves to one of its two readings.
+ */
+export function zonedToUtc(local: string, timeZone: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(
+    local,
+  );
+  if (!m) throw new Error(`Not a local date-time: ${local}`);
+  const naive = Date.UTC(
+    +m[1]!,
+    +m[2]! - 1,
+    +m[3]!,
+    +m[4]!,
+    +m[5]!,
+    +(m[6] ?? 0),
+  );
+  // Guess with the offset at the naive time, then correct it with the offset at the guess.
+  const guess = naive - zoneOffsetMs(naive, timeZone);
+  return new Date(naive - zoneOffsetMs(guess, timeZone)).toISOString();
+}
+
 const iso = (ms: number) => new Date(ms).toISOString();
 
 /** Sort and merge overlapping or touching intervals. */

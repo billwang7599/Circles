@@ -1,21 +1,11 @@
-import { TimeWindowSchema, type Candidate } from "@circles/shared";
-import { generateText, Output, type LanguageModel } from "ai";
+import type { Candidate, FilterName } from "@circles/shared";
+import {
+  generateText,
+  Output,
+  type LanguageModel,
+  type LanguageModelUsage,
+} from "ai";
 import { z } from "zod";
-
-/** What the LLM extracts from the free-text ask. Hard constraints like budget are not its job. */
-export const ParsedRequestSchema = z.object({
-  cuisine: z.string().optional(),
-  partySize: z.number().int().positive().optional(),
-  window: TimeWindowSchema.optional(),
-});
-export type ParsedRequest = z.infer<typeof ParsedRequestSchema>;
-
-export interface ParseInput {
-  text: string;
-  /** Current UTC instant. The model does not know today's date. */
-  now: string;
-  timezone: string;
-}
 
 export const RankedPickSchema = z.object({
   candidateId: z.string(),
@@ -23,22 +13,24 @@ export const RankedPickSchema = z.object({
 });
 export type RankedPick = z.infer<typeof RankedPickSchema>;
 
+/** A candidate with its distance from the search location and the preferences it misses. */
+export interface RankCandidate extends Candidate {
+  distanceKm: number;
+  /** Preferred filters this place does not meet. */
+  unmet: FilterName[];
+}
+
 export interface RankInput {
   text: string;
   /** Candidates that already passed every hard filter. */
-  candidates: Candidate[];
+  candidates: RankCandidate[];
   n: number;
 }
 
-const PARSE_SYSTEM = `You extract facts from a group's request for a restaurant outing.
-Only extract what the request actually says. Leave a field out when it is not stated; never guess.
-- cuisine: a single lowercase cuisine word, if one is named.
-- partySize: only if the request states a number of people.
-- window: only if the request names a date or time. Resolve it relative to the given current time and timezone, and return start and end as UTC ISO 8601 instants ending in Z.`;
-
 const RANK_SYSTEM = `You pick restaurants for a group from a list of candidates and explain each pick.
 Rules:
-- Pick at most the requested number, best fit first.
+- Pick at most the requested number, best first.
+- Candidates are already ordered best first by code. Each has distanceKm from the search location, and unmet: the things the group wanted but this place does not meet. Prefer places with nothing unmet, then nearer places. Only choose a worse-ordered place when it is clearly a better fit for the request or much better rated.
 - candidateId must be copied exactly from the list. Never invent a place or an id.
 - Each rationale is one or two short sentences. Use only facts shown in the candidate data. Do not claim anything about opening hours, prices or capacity that is not in the data.`;
 
@@ -50,18 +42,38 @@ const RankOutputSchema = z.object({ picks: z.array(RankedPickSchema) });
  * provider is the caller's choice. Output is schema-constrained here and validated
  * again by planEvent.
  */
-export class LlmClient {
-  constructor(private readonly model: LanguageModel) {}
+export interface LlmUsage {
+  call: "rank";
+  inputTokens: number | undefined;
+  outputTokens: number | undefined;
+  /** Hidden thinking tokens, when the model reports them. They count as output. */
+  reasoningTokens: number | undefined;
+  ms: number;
+}
 
-  async parse({ text, now, timezone }: ParseInput): Promise<ParsedRequest> {
-    const { output } = await generateText({
-      model: this.model,
-      temperature: 0,
-      system: PARSE_SYSTEM,
-      prompt: `Current time (UTC): ${now}\nTimezone: ${timezone}\nRequest: ${text}`,
-      output: Output.object({ schema: ParsedRequestSchema }),
+export interface LlmClientOptions {
+  /** Called after every successful model call, to log or measure token use and time. */
+  onUsage?: (usage: LlmUsage) => void;
+}
+
+export class LlmClient {
+  constructor(
+    private readonly model: LanguageModel,
+    private readonly options: LlmClientOptions = {},
+  ) {}
+
+  private report(
+    call: LlmUsage["call"],
+    started: number,
+    usage: LanguageModelUsage,
+  ) {
+    this.options.onUsage?.({
+      call,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      reasoningTokens: usage.outputTokenDetails.reasoningTokens,
+      ms: Date.now() - started,
     });
-    return output;
   }
 
   async rank({ text, candidates, n }: RankInput): Promise<RankedPick[]> {
@@ -71,14 +83,18 @@ export class LlmClient {
       cuisines: c.cuisines,
       priceLevel: c.priceLevel,
       rating: c.rating,
+      distanceKm: Math.round(c.distanceKm * 10) / 10,
+      unmet: c.unmet,
     }));
-    const { output } = await generateText({
+    const started = Date.now();
+    const { output, usage } = await generateText({
       model: this.model,
       temperature: 0,
       system: RANK_SYSTEM,
       prompt: `Request: ${text}\nPick up to ${n}.\nCandidates:\n${JSON.stringify(list, null, 2)}`,
       output: Output.object({ schema: RankOutputSchema }),
     });
+    this.report("rank", started, usage);
     return output.picks;
   }
 }

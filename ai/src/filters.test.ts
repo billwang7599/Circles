@@ -1,14 +1,19 @@
+import type {
+  Candidate,
+  FilterModes,
+  SearchFields,
+  TimeWindow,
+} from "@circles/shared";
 import { describe, expect, test } from "vitest";
+import { toSlot } from "./availability.ts";
 import {
   applyFilters,
-  openDuringWindow as openRaw,
-  withinBudget as budgetRaw,
-  fitsParty as partyRaw,
+  fitsParty,
+  openDuringSlots,
   unverifiedFilters,
-  type Filter,
+  withinArea,
+  withinBudget,
 } from "./filters.ts";
-import { weekMinutes } from "@circles/shared";
-import type { Candidate, SearchFields } from "@circles/shared";
 
 const place = (over: Partial<Candidate> = {}): Candidate => ({
   id: "p1",
@@ -24,17 +29,12 @@ const fields = (over: Partial<SearchFields> = {}): SearchFields => ({
 
 // 2026-10-03 is a Saturday. America/New_York is UTC-4 then, so 22:00Z = 18:00 local.
 const SAT = 6 * 1440;
-const window = { start: "2026-10-03T22:00:00Z", end: "2026-10-04T00:00:00Z" }; // 18:00-20:00 local
 const tz = "America/New_York";
-const ctx = { timezone: tz };
-// Filters with the default timezone bound, so cases read without repeating it.
-const bind =
-  (f: Filter) =>
-  (c: Candidate, fl: SearchFields, x = ctx) =>
-    f(c, fl, x);
-const withinBudget = bind(budgetRaw);
-const fitsParty = bind(partyRaw);
-const openDuringWindow = bind(openRaw);
+const slotAt = (w: TimeWindow) => [toSlot(w, tz)];
+const evening = { start: "2026-10-03T22:00:00Z", end: "2026-10-04T00:00:00Z" }; // 18:00-20:00 local
+const open = (openH: number, closeH: number) => [
+  { openMin: SAT + openH * 60, closeMin: SAT + closeH * 60 },
+];
 
 describe("budget", () => {
   test("equal to cap passes, above fails", () => {
@@ -56,86 +56,99 @@ describe("budget", () => {
   });
 });
 
-describe("weekMinutes", () => {
-  test("reads the instant in the given zone", () => {
-    expect(weekMinutes("2026-10-03T22:00:00Z", tz)).toBe(SAT + 18 * 60);
+describe("area", () => {
+  // About 1.11 km per 0.01 degree of latitude.
+  const near = place({ location: { lat: 0.01, lng: 0 } }); // ~1.1 km from the origin
+  const area = (radiusKm: number) => ({ center: { lat: 0, lng: 0 }, radiusKm });
+
+  test("inside the radius passes, outside fails", () => {
+    expect(withinArea(near, fields({ area: area(2) }))).toBe(true);
+    expect(withinArea(near, fields({ area: area(1) }))).toBe(false);
+  });
+  test("no area set means no constraint", () => {
+    expect(withinArea(near, fields())).toBe(true);
   });
 });
 
-describe("open hours", () => {
-  const open = (openH: number, closeH: number) => [
-    { openMin: SAT + openH * 60, closeMin: SAT + closeH * 60 },
-  ];
-  test("open for the whole window passes", () => {
+describe("open hours against the group's free slots", () => {
+  const f = (slots: ReturnType<typeof slotAt>) => fields({ slots });
+
+  test("open for the whole slot passes", () => {
     expect(
-      openDuringWindow(
+      openDuringSlots(
         place({ openingHours: open(11, 22) }),
-        fields({ window }),
-        ctx,
+        f(slotAt(evening)),
       ),
     ).toBe(true);
   });
   test("closed at that time fails", () => {
     expect(
-      openDuringWindow(
+      openDuringSlots(
         place({ openingHours: open(11, 17) }),
-        fields({ window }),
-        ctx,
+        f(slotAt(evening)),
       ),
     ).toBe(false);
   });
-  test("closing mid-window fails", () => {
+  test("closing mid-slot fails", () => {
     expect(
-      openDuringWindow(
+      openDuringSlots(
         place({ openingHours: open(11, 19) }),
-        fields({ window }),
-        ctx,
+        f(slotAt(evening)),
       ),
     ).toBe(false);
   });
-  test("exactly covering the window passes", () => {
+  test("exactly covering the slot passes", () => {
     expect(
-      openDuringWindow(
+      openDuringSlots(
         place({ openingHours: open(18, 20) }),
-        fields({ window }),
-        ctx,
+        f(slotAt(evening)),
       ),
     ).toBe(true);
   });
-  test("period wrapping past Saturday midnight covers an early-Sunday window", () => {
-    const hours = [{ openMin: SAT + 18 * 60, closeMin: 7 * 1440 + 2 * 60 }]; // Sat 18:00 to Sun 02:00
-    const lateWindow = {
-      start: "2026-10-04T05:00:00Z",
-      end: "2026-10-04T06:00:00Z",
-    }; // Sun 01:00-02:00 local
+  test("passes if it is open for any one of several slots", () => {
+    const morning = {
+      start: "2026-10-03T14:00:00Z",
+      end: "2026-10-03T16:00:00Z",
+    }; // 10:00-12:00
+    const slots = [toSlot(morning, tz), toSlot(evening, tz)];
     expect(
-      openDuringWindow(
-        place({ openingHours: hours }),
-        fields({ window: lateWindow }),
-        ctx,
-      ),
+      openDuringSlots(place({ openingHours: open(17, 22) }), f(slots)),
     ).toBe(true);
-  });
-  test("unknown hours pass, but an invalid timezone fails", () => {
-    expect(openDuringWindow(place(), fields({ window }), ctx)).toBe(true);
     expect(
-      openDuringWindow(
-        place({ openingHours: open(0, 24) }),
-        fields({ window }),
-        { timezone: "Not/AZone" },
-      ),
+      openDuringSlots(place({ openingHours: open(13, 16) }), f(slots)),
     ).toBe(false);
   });
-  test("no window means no constraint", () => {
-    expect(openDuringWindow(place(), fields(), ctx)).toBe(true);
-  });
-  test("empty or inverted window fails", () => {
-    const bad = { start: window.end, end: window.start };
+  test("a period wrapping past Saturday midnight covers an early-Sunday slot", () => {
+    const hours = [{ openMin: SAT + 18 * 60, closeMin: 7 * 1440 + 2 * 60 }]; // Sat 18:00 to Sun 02:00
+    const late = { start: "2026-10-04T05:00:00Z", end: "2026-10-04T06:00:00Z" }; // Sun 01:00-02:00 local
     expect(
-      openDuringWindow(
-        place({ openingHours: open(0, 24) }),
-        fields({ window: bad }),
-        ctx,
+      openDuringSlots(place({ openingHours: hours }), f(slotAt(late))),
+    ).toBe(true);
+  });
+  test("unknown hours pass (fails open)", () => {
+    expect(openDuringSlots(place(), f(slotAt(evening)))).toBe(true);
+  });
+  test("no slots set means no constraint; an empty list matches nothing", () => {
+    expect(openDuringSlots(place({ openingHours: open(0, 1) }), fields())).toBe(
+      true,
+    );
+    expect(openDuringSlots(place({ openingHours: open(0, 24) }), f([]))).toBe(
+      false,
+    );
+  });
+  test("a slot spanning a daylight saving jump is read on the local clock", () => {
+    // 2026-03-08 is Sunday; clocks jump 02:00 -> 03:00. This is 01:00 EST to 04:00 EDT.
+    const jump = { start: "2026-03-08T06:00:00Z", end: "2026-03-08T08:00:00Z" };
+    expect(
+      openDuringSlots(
+        place({ openingHours: [{ openMin: 0, closeMin: 300 }] }),
+        f(slotAt(jump)),
+      ),
+    ).toBe(true);
+    expect(
+      openDuringSlots(
+        place({ openingHours: [{ openMin: 0, closeMin: 180 }] }),
+        f(slotAt(jump)),
       ),
     ).toBe(false);
   });
@@ -144,80 +157,93 @@ describe("open hours", () => {
 describe("party size", () => {
   test("fits at the limit, fails above, passes when capacity unknown", () => {
     expect(
-      fitsParty(place({ maxPartySize: 4 }), fields({ partySize: 4 }), ctx),
+      fitsParty(place({ maxPartySize: 4 }), fields({ partySize: 4 })),
     ).toBe(true);
     expect(
-      fitsParty(place({ maxPartySize: 4 }), fields({ partySize: 5 }), ctx),
+      fitsParty(place({ maxPartySize: 4 }), fields({ partySize: 5 })),
     ).toBe(false);
-    expect(fitsParty(place(), fields({ partySize: 50 }), ctx)).toBe(true);
+    expect(fitsParty(place(), fields({ partySize: 50 }))).toBe(true);
   });
 });
 
+const ALL_HARD: FilterModes = {
+  budget: "hard",
+  openHours: "hard",
+  partySize: "hard",
+  area: "hard",
+};
+const prefer = (...names: (keyof FilterModes)[]): FilterModes => ({
+  ...ALL_HARD,
+  ...Object.fromEntries(names.map((n) => [n, "prefer"])),
+});
+
 describe("applyFilters", () => {
-  test("keeps only candidates passing every filter", () => {
-    const cands = [
-      place({ id: "ok", priceLevel: 1, maxPartySize: 10 }),
-      place({ id: "pricey", priceLevel: 4, maxPartySize: 10 }),
-      place({ id: "small", priceLevel: 1, maxPartySize: 2 }),
-    ];
-    const r = applyFilters(
-      cands,
-      fields({ maxPriceLevel: 2, partySize: 6 }),
-      ctx,
-    );
+  const cands = [
+    place({ id: "ok", priceLevel: 1, maxPartySize: 10 }),
+    place({ id: "pricey", priceLevel: 4, maxPartySize: 10 }),
+    place({ id: "small", priceLevel: 1, maxPartySize: 2 }),
+  ];
+  const f = fields({ maxPriceLevel: 2, partySize: 6 });
+
+  test("hard filters drop a candidate that fails", () => {
+    const r = applyFilters(cands, f, ALL_HARD);
     expect(r.passed.map((c) => c.id)).toEqual(["ok"]);
   });
-  test("reports the filter that eliminates the most candidates", () => {
-    const cands = [
+  test("a preferred filter keeps the candidate and records what it misses", () => {
+    const r = applyFilters(cands, f, prefer("budget"));
+    expect(r.passed.map((c) => c.id)).toEqual(["ok", "pricey"]);
+    expect(r.unmet).toEqual({ ok: [], pricey: ["budget"] });
+  });
+  test("each filter has its own mode", () => {
+    const r = applyFilters(cands, f, prefer("budget", "partySize"));
+    expect(r.passed.map((c) => c.id)).toEqual(["ok", "pricey", "small"]);
+    expect(r.unmet.small).toEqual(["partySize"]);
+    expect(r.unmet.pricey).toEqual(["budget"]);
+  });
+  test("every filter preferred means nothing is dropped", () => {
+    const r = applyFilters(
+      cands,
+      f,
+      prefer("budget", "openHours", "partySize", "area"),
+    );
+    expect(r.passed).toHaveLength(3);
+  });
+  test("reports the hard filter that eliminates the most candidates", () => {
+    const many = [
       place({ id: "a", priceLevel: 4, maxPartySize: 10 }),
       place({ id: "b", priceLevel: 4, maxPartySize: 10 }),
       place({ id: "c", priceLevel: 1, maxPartySize: 2 }),
     ];
-    const r = applyFilters(
-      cands,
-      fields({ maxPriceLevel: 2, partySize: 6 }),
-      ctx,
-    );
+    const r = applyFilters(many, f, ALL_HARD);
     expect(r.passed).toEqual([]);
     expect(r.mostRestrictive).toBe("budget");
     expect(r.rejectedBy).toMatchObject({ budget: 2, partySize: 1 });
   });
+  test("a preferred filter is never named as the one that eliminated candidates", () => {
+    const r = applyFilters(cands, f, prefer("budget"));
+    expect(r.mostRestrictive).toBe("partySize");
+  });
   test("nothing rejected leaves mostRestrictive undefined", () => {
     expect(
-      applyFilters([place()], fields(), ctx).mostRestrictive,
+      applyFilters([place()], fields(), ALL_HARD).mostRestrictive,
     ).toBeUndefined();
-  });
-});
-
-describe("open hours across daylight saving", () => {
-  // 2026-03-08 is Sunday; clocks jump 02:00 -> 03:00 EST->EDT.
-  test("a window spanning the jump is read on the local clock", () => {
-    const w = { start: "2026-03-08T06:00:00Z", end: "2026-03-08T08:00:00Z" }; // 01:00 EST - 04:00 EDT
-    const open = [{ openMin: 0, closeMin: 5 * 60 }];
-    expect(
-      openDuringWindow(place({ openingHours: open }), fields({ window: w })),
-    ).toBe(true);
-    const closesAtThree = [{ openMin: 0, closeMin: 3 * 60 }];
-    expect(
-      openDuringWindow(
-        place({ openingHours: closesAtThree }),
-        fields({ window: w }),
-      ),
-    ).toBe(false);
   });
 });
 
 describe("unverifiedFilters", () => {
   test("lists set constraints that data could not verify", () => {
     expect(
-      unverifiedFilters(place(), fields({ maxPriceLevel: 2, window })),
+      unverifiedFilters(
+        place(),
+        fields({ maxPriceLevel: 2, slots: slotAt(evening) }),
+      ),
     ).toEqual(["budget", "openHours", "partySize"]);
   });
   test("known data or unset constraints are not listed", () => {
     expect(
       unverifiedFilters(
         place({ priceLevel: 1, openingHours: [], maxPartySize: 8 }),
-        fields({ maxPriceLevel: 2, window }),
+        fields({ maxPriceLevel: 2, slots: slotAt(evening) }),
       ),
     ).toEqual([]);
     expect(unverifiedFilters(place({ maxPartySize: 8 }), fields())).toEqual([]);

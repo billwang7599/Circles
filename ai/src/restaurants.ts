@@ -4,7 +4,8 @@ import { WEEK_MIN } from "@circles/shared";
 export interface RestaurantQuery {
   center: LatLng;
   radiusKm: number;
-  cuisine?: string;
+  /** What to search for, as the group typed it, such as "ramen". */
+  query?: string;
 }
 
 export interface RestaurantClient {
@@ -154,7 +155,7 @@ export class GoogleRestaurantClient implements RestaurantClient {
         "x-goog-fieldmask": FIELD_MASK,
       },
       body: JSON.stringify({
-        textQuery: q.cuisine ? `${q.cuisine} restaurant` : "restaurant",
+        textQuery: q.query?.trim() || "restaurant",
         includedType: "restaurant",
         pageSize: 20,
         locationBias: {

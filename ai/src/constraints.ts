@@ -15,15 +15,15 @@ export function priceLevelForBudget(budget: number): number {
 export interface GroupConstraints {
   partySize: number;
   maxPriceLevel: number;
-  maxDistanceKm: number;
-  /** Times within the range when no member is unavailable. */
+  /** Times within the range when no member is unavailable. All UTC, whatever zone each member works in. */
   freeWindows: TimeWindow[];
-  timezone: string;
 }
 
 /**
- * Hard constraints derived in plain code, never by the LLM. Either cap must hold for
- * everyone, so the group budget and distance are the minimum across members.
+ * Hard constraints derived in plain code, never by the LLM. A cap must hold for
+ * everyone, so the group budget is the lowest member budget. Free time is the part of
+ * the range when no member is unavailable. Everyone is assumed able to reach the place;
+ * where to look is the planner's choice, not a per-person limit.
  */
 export function deriveConstraints(
   group: GroupContext,
@@ -35,11 +35,9 @@ export function deriveConstraints(
     maxPriceLevel: priceLevelForBudget(
       Math.min(...members.map((m) => m.budget)),
     ),
-    maxDistanceKm: Math.min(...members.map((m) => m.maxDistanceKm)),
     freeWindows: subtractIntervals(
       range,
       members.flatMap((m) => m.unavailable),
     ),
-    timezone: group.timezone,
   };
 }

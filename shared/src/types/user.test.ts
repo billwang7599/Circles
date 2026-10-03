@@ -4,9 +4,14 @@ import { UserSchema } from "./user.ts";
 const valid = {
   id: "u1",
   name: "Bill",
+  location: {
+    name: "Toronto",
+    lat: 43.65,
+    lng: -79.38,
+    timezone: "America/Toronto",
+  },
   unavailable: [{ start: "2026-10-03T18:00:00Z", end: "2026-10-03T20:00:00Z" }],
   budget: 25,
-  maxDistanceKm: 5,
 };
 
 describe("UserSchema", () => {
@@ -32,10 +37,23 @@ describe("UserSchema", () => {
   test("rejects a blank name", () => {
     expect(UserSchema.safeParse({ ...valid, name: "  " }).success).toBe(false);
   });
-  test("rejects negative budget and non-positive distance", () => {
+  test("rejects a negative budget", () => {
     expect(UserSchema.safeParse({ ...valid, budget: -1 }).success).toBe(false);
-    expect(UserSchema.safeParse({ ...valid, maxDistanceKm: 0 }).success).toBe(
-      false,
-    );
+  });
+
+  test("rejects a missing or invalid location", () => {
+    const noLocation: Partial<typeof valid> = { ...valid };
+    delete noLocation.location;
+    expect(UserSchema.safeParse(noLocation).success).toBe(false);
+    for (const bad of [
+      { ...valid.location, lat: 91 },
+      { ...valid.location, lng: -181 },
+      { ...valid.location, timezone: "Nowhere/Land" },
+      { ...valid.location, name: "" },
+    ]) {
+      expect(UserSchema.safeParse({ ...valid, location: bad }).success).toBe(
+        false,
+      );
+    }
   });
 });

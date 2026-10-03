@@ -22,19 +22,21 @@ const post = (body: unknown) =>
 const member = {
   id: "u",
   name: "U",
+  location: {
+    name: "Toronto",
+    lat: 43.6532,
+    lng: -79.3832,
+    timezone: "America/Toronto",
+  },
   budget: 40,
-  maxDistanceKm: 10,
   unavailable: [],
 };
-const group = {
-  city: "toronto",
-  timezone: "America/Toronto",
-  members: [member],
-};
+const group = { members: [member] };
+const location = member.location;
 
 describe("POST /plan", () => {
   test("returns options from the planner", async () => {
-    const res = await post({ text: "dinner", group });
+    const res = await post({ text: "dinner", group, location });
     expect(res.status).toBe(200);
     const body = await res.json();
     // The result is either options or a clear no-match, depending on the clock.
@@ -42,18 +44,30 @@ describe("POST /plan", () => {
   });
   test("rejects an invalid body", async () => {
     expect((await post({ text: "dinner" })).status).toBe(400);
-    expect((await post({ text: "", group })).status).toBe(400);
+    expect((await post({ text: "", group, location })).status).toBe(400);
     const res = await app.request("/plan", {
       method: "POST",
       body: "not json",
     });
     expect(res.status).toBe(400);
   });
-  test("rejects an unknown city", async () => {
-    expect(
-      (await post({ text: "dinner", group: { ...group, city: "atlantis" } }))
-        .status,
-    ).toBe(400);
+  test("accepts members in different time zones", async () => {
+    const vancouver = {
+      ...member,
+      id: "v",
+      location: {
+        name: "Vancouver",
+        lat: 49.28,
+        lng: -123.12,
+        timezone: "America/Vancouver",
+      },
+    };
+    const res = await post({
+      text: "dinner",
+      group: { members: [member, vancouver] },
+      location,
+    });
+    expect(res.status).toBe(200);
   });
   test("health check", async () => {
     expect((await app.request("/health")).status).toBe(200);
@@ -74,7 +88,7 @@ describe("background plans", () => {
   }
 
   test("POST /plans returns 202 with an id, and GET shows the plan", async () => {
-    const res = await send(app, { text: "dinner", group });
+    const res = await send(app, { text: "dinner", group, location });
     expect(res.status).toBe(202);
     const job = await res.json();
     expect(job.id).toBeTruthy();
@@ -83,12 +97,36 @@ describe("background plans", () => {
     expect(got.status).toBe(200);
   });
 
-  test("rejects an invalid body and an unknown city", async () => {
+  test("rejects an invalid body", async () => {
     expect((await send(app, { text: "dinner" })).status).toBe(400);
     expect(
-      (await send(app, { text: "x", group: { ...group, city: "atlantis" } }))
+      (await send(app, { text: "x", group: { members: [] } })).status,
+    ).toBe(400);
+  });
+
+  test("rejects a missing location or a radius over 50 km", async () => {
+    expect((await send(app, { text: "dinner", group })).status).toBe(400);
+    expect(
+      (await send(app, { text: "dinner", group, location, radiusKm: 80 }))
         .status,
     ).toBe(400);
+  });
+
+  test("accepts per-filter modes and rejects an unknown mode", async () => {
+    const ok = await send(app, {
+      text: "dinner",
+      group,
+      location,
+      filterModes: { area: "hard", budget: "prefer" },
+    });
+    expect(ok.status).toBe(202);
+    const bad = await send(app, {
+      text: "dinner",
+      group,
+      location,
+      filterModes: { area: "maybe" },
+    });
+    expect(bad.status).toBe(400);
   });
 
   test("unknown plan ids are 404", async () => {
@@ -97,7 +135,9 @@ describe("background plans", () => {
   });
 
   test("the event stream sends updates and ends on the final one", async () => {
-    const job = await (await send(app, { text: "ramen", group })).json();
+    const job = await (
+      await send(app, { text: "ramen", group, location })
+    ).json();
     const res = await app.request(`/plans/${job.id}/events`);
     expect(res.headers.get("content-type")).toContain("text/event-stream");
     const text = await readStream(res);
@@ -110,7 +150,9 @@ describe("background plans", () => {
   });
 
   test("a finished plan streams its final state at once and closes", async () => {
-    const job = await (await send(app, { text: "ramen", group })).json();
+    const job = await (
+      await send(app, { text: "ramen", group, location })
+    ).json();
     await readStream(await app.request(`/plans/${job.id}/events`)); // wait for done
     const again = await readStream(
       await app.request(`/plans/${job.id}/events`),
@@ -131,7 +173,9 @@ describe("background plans", () => {
       { llm: new LlmClient(createFakeLlmModel()), restaurants: slow },
       { heartbeatMs: 15 },
     );
-    const job = await (await send(slowApp, { text: "ramen", group })).json();
+    const job = await (
+      await send(slowApp, { text: "ramen", group, location })
+    ).json();
     const res = await slowApp.request(`/plans/${job.id}/events`);
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();

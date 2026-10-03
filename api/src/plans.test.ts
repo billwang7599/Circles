@@ -9,13 +9,37 @@ import type { PlanJob, PlanRequest } from "@circles/shared";
 import { describe, expect, test } from "vitest";
 import { PlanStore } from "./plans.ts";
 
+const toronto = {
+  name: "Toronto",
+  lat: 43.6532,
+  lng: -79.3832,
+  timezone: "America/Toronto",
+};
+
 const request: PlanRequest = {
   text: "ramen",
+  location: toronto,
+  radiusKm: 15,
+  filterModes: {
+    budget: "hard",
+    openHours: "hard",
+    partySize: "hard",
+    area: "prefer",
+  },
   group: {
-    city: "toronto",
-    timezone: "America/Toronto",
     members: [
-      { id: "u", name: "U", budget: 40, maxDistanceKm: 10, unavailable: [] },
+      {
+        id: "u",
+        name: "U",
+        location: {
+          name: "Toronto",
+          lat: 43.6532,
+          lng: -79.3832,
+          timezone: "America/Toronto",
+        },
+        budget: 40,
+        unavailable: [],
+      },
     ],
   },
 };
@@ -69,13 +93,13 @@ describe("PlanStore", () => {
     ).toBe(true);
   });
 
-  test("subscribers see the stages as the pipeline moves", async () => {
+  test("subscribers see the pipeline's later stages as it moves", async () => {
     const store = new PlanStore({ deps: fakeDeps() });
     const job = store.submit(request);
     const stages = new Set<string | undefined>();
     store.subscribe(job.id, (j) => stages.add(j.stage));
     await finished(store, job.id);
-    expect(stages).toContain("searching");
+    // "searching" is reported before a subscriber can attach, so only later stages show.
     expect(stages).toContain("ranking");
   });
 

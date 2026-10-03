@@ -1,23 +1,14 @@
-import {
-  WEEK_MIN,
-  isValidTimeZone,
-  parseInstant,
-  weekMinutes,
+import type {
+  Candidate,
+  FilterModes,
+  FilterName,
+  LatLng,
+  SearchFields,
 } from "@circles/shared";
-import type { Candidate, LatLng, SearchFields } from "@circles/shared";
+import { FILTER_NAMES } from "@circles/shared";
+import { openCovers } from "./availability.ts";
 
-export type FilterName = "budget" | "distance" | "openHours" | "partySize";
-
-export interface FilterContext {
-  /** IANA zone the window is read in, to compare against the place's local opening hours. */
-  timezone: string;
-}
-
-export type Filter = (
-  c: Candidate,
-  f: SearchFields,
-  ctx: FilterContext,
-) => boolean;
+export type Filter = (c: Candidate, f: SearchFields) => boolean;
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -39,28 +30,18 @@ export const withinBudget: Filter = (c, f) => {
   return c.priceLevel === undefined || c.priceLevel <= f.maxPriceLevel;
 };
 
-export const withinDistance: Filter = (c, f) => {
-  if (!f.center || f.maxDistanceKm === undefined) return true;
-  return distanceKm(f.center, c.location) <= f.maxDistanceKm;
+/** Inside the radius the planner chose around the search location. */
+export const withinArea: Filter = (c, f) => {
+  if (!f.area) return true;
+  return distanceKm(f.area.center, c.location) <= f.area.radiusKm;
 };
 
-export const openDuringWindow: Filter = (c, f, ctx) => {
-  if (!f.window) return true;
+/** Open for the whole of at least one of the group's free slots. */
+export const openDuringSlots: Filter = (c, f) => {
+  if (!f.slots) return true;
   if (!c.openingHours) return true;
-  if (!isValidTimeZone(ctx.timezone)) return false;
-  const length = parseInstant(f.window.end) - parseInstant(f.window.start);
-  if (!(length > 0) || length >= WEEK_MIN * 60000) return false;
-  // Read both ends on the local clock, so a daylight saving jump inside the window is handled.
-  const start = weekMinutes(f.window.start, ctx.timezone);
-  let end = weekMinutes(f.window.end, ctx.timezone);
-  if (end <= start) end += WEEK_MIN;
-  // Also check the period shifted a week back, so a period wrapping past Saturday
-  // midnight covers an early-Sunday window.
-  return c.openingHours.some(
-    ({ openMin, closeMin }) =>
-      (start >= openMin && end <= closeMin) ||
-      (start + WEEK_MIN >= openMin && end + WEEK_MIN <= closeMin),
-  );
+  const hours = c.openingHours;
+  return f.slots.some((slot) => openCovers(hours, slot));
 };
 
 export const fitsParty: Filter = (c, f) =>
@@ -68,39 +49,54 @@ export const fitsParty: Filter = (c, f) =>
 
 export const FILTERS: Record<FilterName, Filter> = {
   budget: withinBudget,
-  distance: withinDistance,
-  openHours: openDuringWindow,
+  openHours: openDuringSlots,
+  area: withinArea,
   partySize: fitsParty,
 };
 
 export interface FilterResult {
+  /** Candidates that meet every filter set to "hard". */
   passed: Candidate[];
+  /** For each passed candidate, the "prefer" filters it does not meet. */
+  unmet: Record<string, FilterName[]>;
   /** How many candidates each filter rejects when applied on its own. */
   rejectedBy: Record<FilterName, number>;
-  /** Filter that rejects the most candidates alone. Undefined when nothing is rejected. */
+  /** The hard filter that rejects the most candidates alone. Undefined when nothing is rejected. */
   mostRestrictive?: FilterName;
 }
 
+/**
+ * Hard filters drop candidates. Preferred filters never drop one; they only record which
+ * preferences each remaining candidate misses, so the ranking can put those last.
+ */
 export function applyFilters(
   candidates: Candidate[],
   fields: SearchFields,
-  ctx: FilterContext,
+  modes: FilterModes,
 ): FilterResult {
-  const names = Object.keys(FILTERS) as FilterName[];
+  const hard = FILTER_NAMES.filter((n) => modes[n] === "hard");
+  const prefer = FILTER_NAMES.filter((n) => modes[n] === "prefer");
   const rejectedBy = Object.fromEntries(
-    names.map((n) => [
+    FILTER_NAMES.map((n) => [
       n,
-      candidates.filter((c) => !FILTERS[n](c, fields, ctx)).length,
+      candidates.filter((c) => !FILTERS[n](c, fields)).length,
     ]),
   ) as Record<FilterName, number>;
   const passed = candidates.filter((c) =>
-    names.every((n) => FILTERS[n](c, fields, ctx)),
+    hard.every((n) => FILTERS[n](c, fields)),
   );
-  const top = names.reduce((a, b) => (rejectedBy[b] > rejectedBy[a] ? b : a));
+  const unmet = Object.fromEntries(
+    passed.map((c) => [c.id, prefer.filter((n) => !FILTERS[n](c, fields))]),
+  );
+  const top = hard.reduce<FilterName | undefined>(
+    (a, b) => (a === undefined || rejectedBy[b] > rejectedBy[a] ? b : a),
+    undefined,
+  );
   return {
     passed,
+    unmet,
     rejectedBy,
-    mostRestrictive: rejectedBy[top] > 0 ? top : undefined,
+    mostRestrictive: top && rejectedBy[top] > 0 ? top : undefined,
   };
 }
 
@@ -109,7 +105,7 @@ export function unverifiedFilters(c: Candidate, f: SearchFields): FilterName[] {
   const out: FilterName[] = [];
   if (f.maxPriceLevel !== undefined && c.priceLevel === undefined)
     out.push("budget");
-  if (f.window && !c.openingHours) out.push("openHours");
+  if (f.slots && !c.openingHours) out.push("openHours");
   if (c.maxPartySize === undefined) out.push("partySize");
   return out;
 }

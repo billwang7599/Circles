@@ -1,4 +1,5 @@
 import { MockLanguageModelV4 } from "ai/test";
+import type { RankCandidate } from "./llm.ts";
 import type { RestaurantClient, RestaurantQuery } from "./restaurants.ts";
 import type { Candidate, LatLng, OpeningPeriod } from "@circles/shared";
 
@@ -98,10 +99,11 @@ export class FakeRestaurantClient implements RestaurantClient {
   constructor(private readonly places: FakePlace[] = DEFAULT_PLACES) {}
 
   async search(q: RestaurantQuery): Promise<Candidate[]> {
+    // Like a real search, narrow by a cuisine word in the query when there is one.
+    const lower = q.query?.toLowerCase() ?? "";
+    const cuisine = KNOWN_CUISINES.find((c) => lower.includes(c));
     return this.places
-      .filter(
-        (p) => !q.cuisine || p.cuisines?.includes(q.cuisine.toLowerCase()),
-      )
+      .filter((p) => !cuisine || p.cuisines?.includes(cuisine))
       .map(({ offset, ...p }) => ({
         ...p,
         location: {
@@ -126,10 +128,8 @@ const KNOWN_CUISINES = [
 ];
 
 export interface FakeLlmOverrides {
-  /** Replace what the fake model answers for the parse call. Receives the request text. */
-  parse?: (text: string) => unknown;
   /** Replace what the fake model answers for the rank call. Receives the candidates and n. */
-  rank?: (candidates: Candidate[], n: number) => unknown;
+  rank?: (candidates: RankCandidate[], n: number) => unknown;
 }
 
 /** Text of the last user message sent to the model. */
@@ -144,44 +144,35 @@ function userText(prompt: unknown): string {
 
 /**
  * A deterministic stand-in for a real model, built on the AI SDK's mock model, so the
- * planner (through LlmClient) runs with no API key. Parse matches cuisine keywords and
- * "for N"; rank orders by rating. Overrides let a test script bad or unusual answers.
+ * planner (through LlmClient) runs with no API key. It ranks by rating. Overrides let a
+ * test script bad or unusual answers.
  */
 export function createFakeLlmModel(overrides: FakeLlmOverrides = {}) {
   return new MockLanguageModelV4({
     doGenerate: async ({ prompt }) => {
       const text = userText(prompt);
-      let answer: unknown;
-      if (text.includes("\nCandidates:\n")) {
-        const candidates = JSON.parse(
-          text.slice(
-            text.indexOf("\nCandidates:\n") + "\nCandidates:\n".length,
-          ),
-        ) as Candidate[];
-        const n = Number(/Pick up to (\d+)/.exec(text)?.[1] ?? 3);
-        answer = overrides.rank
-          ? overrides.rank(candidates, n)
-          : {
-              picks: [...candidates]
-                .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
-                .slice(0, n)
-                .map((c) => ({
-                  candidateId: c.id,
-                  rationale: `${c.name} is rated ${c.rating ?? "unrated"}.`,
-                })),
-            };
-      } else {
-        const request = /Request: (.*)/.exec(text)?.[1] ?? "";
-        const lower = request.toLowerCase();
-        const cuisine = KNOWN_CUISINES.find((c) => lower.includes(c));
-        const size = /for (\d+)/.exec(lower);
-        answer = overrides.parse
-          ? overrides.parse(request)
-          : {
-              ...(cuisine ? { cuisine } : {}),
-              ...(size ? { partySize: Number(size[1]) } : {}),
-            };
-      }
+      const candidates = JSON.parse(
+        text.slice(text.indexOf("\nCandidates:\n") + "\nCandidates:\n".length),
+      ) as RankCandidate[];
+      const n = Number(/Pick up to (\d+)/.exec(text)?.[1] ?? 3);
+      const answer = overrides.rank
+        ? overrides.rank(candidates, n)
+        : {
+            // Fewest unmet preferences, then nearest, then better rated: the order the
+            // real prompt asks for.
+            picks: [...candidates]
+              .sort(
+                (a, b) =>
+                  a.unmet.length - b.unmet.length ||
+                  a.distanceKm - b.distanceKm ||
+                  (b.rating ?? 0) - (a.rating ?? 0),
+              )
+              .slice(0, n)
+              .map((c) => ({
+                candidateId: c.id,
+                rationale: `${c.name} is ${c.distanceKm.toFixed(1)} km away and rated ${c.rating ?? "unrated"}.`,
+              })),
+          };
       return {
         content: [{ type: "text" as const, text: JSON.stringify(answer) }],
         finishReason: { unified: "stop" as const, raw: undefined },

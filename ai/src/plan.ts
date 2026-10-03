@@ -1,22 +1,25 @@
 import {
   PlanRequestSchema,
-  findCity,
-  parseInstant,
   type Candidate,
+  type FilterModes,
+  type FilterName,
   type PlanOption,
-  type PlanStage,
   type PlanRequest,
+  type PlanStage,
   type SearchFields,
-  type TimeWindow,
 } from "@circles/shared";
 import { z } from "zod";
-import { deriveConstraints } from "./constraints.ts";
-import { applyFilters, unverifiedFilters, type FilterName } from "./filters.ts";
 import {
-  ParsedRequestSchema,
+  availableTimes,
+  generateSlots,
+  type SlotOptions,
+} from "./availability.ts";
+import { deriveConstraints } from "./constraints.ts";
+import { applyFilters, distanceKm, unverifiedFilters } from "./filters.ts";
+import {
   RankedPickSchema,
   type LlmClient,
-  type ParsedRequest,
+  type RankCandidate,
   type RankedPick,
 } from "./llm.ts";
 import type { RestaurantClient } from "./restaurants.ts";
@@ -31,6 +34,8 @@ export interface PlanDeps {
 export interface PlanOptions {
   /** How many options to return. Default 3. */
   n?: number;
+  /** Meeting length and the hours considered. See SlotOptions for the defaults. */
+  slots?: SlotOptions;
   /** Called as the pipeline moves between steps, so callers can show progress. */
   onProgress?: (stage: PlanStage) => void;
 }
@@ -42,7 +47,8 @@ export type PlanResult =
       status: "ok";
       options: PlanOption[];
       candidates: Candidate[];
-      fields: SearchFields;
+      /** Set when fewer places than asked for met the must-haves, and why. */
+      notice?: string;
     }
   | { status: "no_matches"; reason: NoMatchReason; message: string };
 
@@ -50,16 +56,16 @@ export type PlanResult =
 export class PlannerError extends Error {}
 
 const SEARCH_DAYS = 14;
-const DEFAULT_DURATION_MS = 2 * 3600_000;
 const MAX_ATTEMPTS = 3;
 const DAY_MS = 24 * 3600_000;
 
 const NO_MATCH_MESSAGES: Record<NoMatchReason, string> = {
-  no_free_time: "No time in the next two weeks when everyone is free.",
-  no_restaurants: "No restaurants were found for that request.",
+  no_free_time:
+    "No time in the next two weeks when everyone is free for a meal out.",
+  no_restaurants: "No restaurants were found for that search.",
   budget: "Every place found was over the group's budget.",
-  distance: "Every place found was farther than the group's distance limit.",
-  openHours: "Every place found was closed at the chosen time.",
+  area: "Every place found was outside the search radius.",
+  openHours: "Every place found was closed whenever the group is free.",
   partySize: "Every place found is too small for the group.",
 };
 
@@ -88,124 +94,155 @@ async function validated<T>(
   );
 }
 
-const contains = (outer: TimeWindow, inner: TimeWindow) =>
-  parseInstant(inner.start) >= parseInstant(outer.start) &&
-  parseInstant(inner.end) <= parseInstant(outer.end);
+const FILTER_LABELS: Record<FilterName, string> = {
+  budget: "Budget",
+  openHours: "Opening hours",
+  partySize: "Party size",
+  area: "Location",
+};
 
 /**
- * TODO: pick the window better. This takes the first free slot of at least two hours,
- * which can land at 3am. Better: prefer evening slots, or try several slots.
+ * Said when must-haves left fewer places than were asked for, so a short list is never a
+ * mystery: how many places there were, how many met every must-have, and which must-haves
+ * did the cutting. Counts are per filter alone, so they can overlap.
  */
-function defaultWindow(free: TimeWindow[]): TimeWindow | undefined {
-  const slot = free.find(
-    (w) => parseInstant(w.end) - parseInstant(w.start) >= DEFAULT_DURATION_MS,
-  );
-  if (!slot) return undefined;
-  const start = parseInstant(slot.start);
-  return {
-    start: slot.start,
-    end: new Date(start + DEFAULT_DURATION_MS).toISOString(),
-  };
+function shortfallNotice(
+  found: number,
+  passed: number,
+  rejectedBy: Record<FilterName, number>,
+  modes: FilterModes,
+): string {
+  const causes = (Object.keys(rejectedBy) as FilterName[])
+    .filter((name) => modes[name] === "hard" && rejectedBy[name] > 0)
+    .sort((a, b) => rejectedBy[b] - rejectedBy[a])
+    .map((name) => `${FILTER_LABELS[name]} rules out ${rejectedBy[name]}`);
+  const head = `Only ${passed} of ${found} places met every must-have.`;
+  return causes.length > 0
+    ? `${head} ${causes.join(", ")}. Switch a filter to Prefer to see more.`
+    : head;
 }
 
-function describeChecks(c: Candidate, f: SearchFields): string[] {
+function describeChecks(
+  c: RankCandidate,
+  f: SearchFields,
+  modes: FilterModes,
+): string[] {
   const unverified = new Set(unverifiedFilters(c, f));
+  const unmet = new Set(c.unmet);
+  const tag = (name: FilterName) =>
+    modes[name] === "prefer" ? " (preferred)" : "";
   const checks: string[] = [];
+
   if (f.maxPriceLevel !== undefined) {
     checks.push(
       unverified.has("budget")
         ? "Budget: unverified (no price data)"
-        : `Budget: within price level ${f.maxPriceLevel}`,
-    );
-  }
-  if (f.maxDistanceKm !== undefined)
-    checks.push(`Distance: within ${f.maxDistanceKm} km`);
-  if (f.window) {
-    checks.push(
-      unverified.has("openHours")
-        ? "Open hours: unverified (no hours data)"
-        : "Open hours: open for the whole window",
+        : unmet.has("budget")
+          ? `Budget${tag("budget")}: over price level ${f.maxPriceLevel}, not met`
+          : `Budget${tag("budget")}: within price level ${f.maxPriceLevel}`,
     );
   }
   checks.push(
+    unverified.has("openHours")
+      ? "Open hours: unverified (no hours data)"
+      : unmet.has("openHours")
+        ? `Open hours${tag("openHours")}: not open when the group is free, not met`
+        : `Open hours${tag("openHours")}: open when the group is free`,
+  );
+  checks.push(
     unverified.has("partySize")
       ? "Party size: unverified (capacity unknown)"
-      : `Party size: fits ${f.partySize}`,
+      : unmet.has("partySize")
+        ? `Party size${tag("partySize")}: seats fewer than ${f.partySize}, not met`
+        : `Party size${tag("partySize")}: fits ${f.partySize}`,
   );
+  if (f.area) {
+    checks.push(
+      unmet.has("area")
+        ? `Location${tag("area")}: ${Math.round(c.distanceKm * 10) / 10} km away, outside the ${f.area.radiusKm} km radius, not met`
+        : `Location${tag("area")}: within ${f.area.radiusKm} km`,
+    );
+  }
   return checks;
 }
 
 /**
- * Parse -> fetch and filter -> rank and explain. Hard constraints are enforced in
- * code; the LLM only parses the ask and picks among candidates that already passed.
+ * Derive constraints -> fetch and filter -> rank and explain. Everything the group's
+ * data already says (party size, budget, distance, free time) is worked out in code.
+ * The LLM only picks among candidates that already passed, and explains why.
  */
 export async function planEvent(
   rawRequest: PlanRequest,
   deps: PlanDeps,
-  { n = 3, onProgress }: PlanOptions = {},
+  { n = 3, slots: slotOptions, onProgress }: PlanOptions = {},
 ): Promise<PlanResult> {
   const request = PlanRequestSchema.parse(rawRequest);
-  const { group } = request;
-  const city = findCity(group.city);
-  if (!city) throw new Error(`Unknown city: ${group.city}`);
-
+  const { group, location, radiusKm, filterModes } = request;
+  const center = { lat: location.lat, lng: location.lng };
   const now = (deps.now ?? (() => new Date()))();
-  const range: TimeWindow = {
+  const constraints = deriveConstraints(group, {
     start: now.toISOString(),
     end: new Date(now.getTime() + SEARCH_DAYS * DAY_MS).toISOString(),
-  };
-  const constraints = deriveConstraints(group, range);
+  });
 
-  // 1. Parse (LLM)
-  onProgress?.("parsing");
-  const parsed: ParsedRequest = await validated(
-    () =>
-      deps.llm.parse({
-        text: request.text,
-        now: range.start,
-        timezone: group.timezone,
-      }),
-    (raw) => ParsedRequestSchema.parse(raw),
-    "parse",
+  // Opening hours and mealtimes are read in the search location's time zone. Members'
+  // own zones only matter when they enter times, which are stored as UTC.
+  const slots = generateSlots(
+    constraints.freeWindows,
+    location.timezone,
+    slotOptions,
   );
-
-  // The window must sit inside a time when everyone is free.
-  const window = parsed.window ?? defaultWindow(constraints.freeWindows);
-  if (!window || !constraints.freeWindows.some((w) => contains(w, window))) {
-    return noMatches("no_free_time");
-  }
+  if (slots.length === 0) return noMatches("no_free_time");
 
   const fields: SearchFields = {
-    ...(parsed.cuisine ? { cuisine: parsed.cuisine } : {}),
-    partySize: Math.max(parsed.partySize ?? 0, constraints.partySize),
-    window,
+    query: request.text,
+    partySize: constraints.partySize,
+    slots,
     maxPriceLevel: constraints.maxPriceLevel,
-    center: city.center,
-    maxDistanceKm: constraints.maxDistanceKm,
+    area: { center, radiusKm },
   };
 
-  // 2. Fetch and filter (plain code)
+  // 1. Fetch and filter (plain code)
   onProgress?.("searching");
   const found = await deps.restaurants.search({
-    center: city.center,
-    radiusKm: constraints.maxDistanceKm,
-    ...(fields.cuisine ? { cuisine: fields.cuisine } : {}),
+    center,
+    radiusKm,
+    query: request.text,
   });
   if (found.length === 0) return noMatches("no_restaurants");
 
-  const { passed, mostRestrictive } = applyFilters(found, fields, {
-    timezone: group.timezone,
-  });
+  const { passed, unmet, rejectedBy, mostRestrictive } = applyFilters(
+    found,
+    fields,
+    filterModes,
+  );
   if (passed.length === 0)
     return noMatches(mostRestrictive ?? "no_restaurants");
 
+  // Order by how well each place meets the preferences: fewest unmet first, then nearer,
+  // then better rated. Preferred filters never drop a place, they only move it down.
+  const ranked: RankCandidate[] = passed
+    .map((c) => ({
+      ...c,
+      distanceKm: distanceKm(center, c.location),
+      unmet: unmet[c.id] ?? [],
+    }))
+    .sort(
+      (a, b) =>
+        a.unmet.length - b.unmet.length ||
+        a.distanceKm - b.distanceKm ||
+        (b.rating ?? 0) - (a.rating ?? 0),
+    );
+
+  // 2. Rank and explain (LLM). Every pick must be a distinct candidate that passed.
   onProgress?.("ranking");
-  // 3. Rank and explain (LLM). Every pick must be a distinct candidate that passed.
   const allowed = new Set(passed.map((c) => c.id));
   const picks: RankedPick[] = await validated(
-    () => deps.llm.rank({ text: request.text, candidates: passed, n }),
+    () => deps.llm.rank({ text: request.text, candidates: ranked, n }),
     (raw) => {
       const list = z.array(RankedPickSchema).parse(raw);
+      // Places passed the filters, so an empty answer is a bad answer, not "nothing fits".
+      if (list.length === 0) throw new Error("no picks returned");
       const ids = list.map((p) => p.candidateId);
       if (ids.some((id) => !allowed.has(id)))
         throw new Error("pick is not a filtered candidate");
@@ -215,12 +252,28 @@ export async function planEvent(
     "rank",
   );
 
-  const byId = new Map(passed.map((c) => [c.id, c]));
-  const options: PlanOption[] = picks.map((p) => ({
-    candidateId: p.candidateId,
-    rationale: p.rationale,
-    constraintChecks: describeChecks(byId.get(p.candidateId)!, fields),
-  }));
+  const byId = new Map(ranked.map((c) => [c.id, c]));
+  const options: PlanOption[] = picks.map((p) => {
+    const candidate = byId.get(p.candidateId)!;
+    return {
+      candidateId: p.candidateId,
+      rationale: p.rationale,
+      constraintChecks: describeChecks(candidate, fields, filterModes),
+      availableTimes: availableTimes(candidate, slots),
+      distanceKm: Math.round(candidate.distanceKm * 10) / 10,
+      unmet: candidate.unmet,
+    };
+  });
 
-  return { status: "ok", options, candidates: passed, fields };
+  const notice =
+    passed.length < n
+      ? shortfallNotice(found.length, passed.length, rejectedBy, filterModes)
+      : undefined;
+
+  return {
+    status: "ok",
+    options,
+    candidates: ranked,
+    ...(notice ? { notice } : {}),
+  };
 }

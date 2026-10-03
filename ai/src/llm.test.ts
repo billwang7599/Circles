@@ -1,7 +1,6 @@
-import type { Candidate } from "@circles/shared";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, test } from "vitest";
-import { LlmClient } from "./llm.ts";
+import { LlmClient, type RankCandidate } from "./llm.ts";
 
 const modelReturning = (json: unknown) =>
   new MockLanguageModelV4({
@@ -21,41 +20,33 @@ const modelReturning = (json: unknown) =>
     }),
   });
 
-const candidate = (id: string): Candidate => ({
+const candidate = (id: string): RankCandidate => ({
   id,
   name: `Place ${id}`,
   location: { lat: 0, lng: 0 },
   source: "fake",
+  distanceKm: 1.234,
+  unmet: [],
 });
 
 describe("LlmClient", () => {
-  test("parse returns the structured output and sends now, timezone and the ask", async () => {
-    const model = modelReturning({ cuisine: "ramen", partySize: 4 });
-    const out = await new LlmClient(model).parse({
-      text: "ramen for 4",
-      now: "2026-10-03T15:00:00Z",
-      timezone: "America/Toronto",
-    });
-    expect(out).toEqual({ cuisine: "ramen", partySize: 4 });
-    const prompt = JSON.stringify(model.doGenerateCalls[0]?.prompt);
-    expect(prompt).toContain("2026-10-03T15:00:00Z");
-    expect(prompt).toContain("America/Toronto");
-    expect(prompt).toContain("ramen for 4");
-  });
-
-  test("rank returns the picks and sends only the given candidates", async () => {
+  test("rank returns the picks and sends the ask and only the given candidates", async () => {
     const model = modelReturning({
       picks: [{ candidateId: "a", rationale: "Good fit." }],
     });
     const out = await new LlmClient(model).rank({
-      text: "dinner",
+      text: "cheap ramen",
       candidates: [candidate("a"), candidate("b")],
       n: 1,
     });
     expect(out).toEqual([{ candidateId: "a", rationale: "Good fit." }]);
     const prompt = JSON.stringify(model.doGenerateCalls[0]?.prompt);
+    expect(prompt).toContain("cheap ramen");
     expect(prompt).toContain("Place a");
     expect(prompt).toContain("Place b");
+    // Distance is shown rounded, so the ranker can prefer closer places.
+    expect(prompt).toContain("distanceKm");
+    expect(prompt).toContain("1.2");
   });
 
   test("output that does not match the schema throws", async () => {
@@ -67,5 +58,24 @@ describe("LlmClient", () => {
         n: 1,
       }),
     ).rejects.toThrow();
+  });
+
+  test("onUsage reports the call, token counts and time", async () => {
+    const reports: unknown[] = [];
+    const model = modelReturning({
+      picks: [{ candidateId: "a", rationale: "ok" }],
+    });
+    await new LlmClient(model, { onUsage: (u) => reports.push(u) }).rank({
+      text: "x",
+      candidates: [candidate("a")],
+      n: 1,
+    });
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({
+      call: "rank",
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    expect(typeof (reports[0] as { ms: number }).ms).toBe("number");
   });
 });

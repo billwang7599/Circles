@@ -39,7 +39,7 @@ const client = (f: typeof fetch, extra = {}) =>
 describe("GoogleRestaurantClient", () => {
   test("sends the key, a field mask, and a restaurant search biased to the area", async () => {
     const { fn, calls } = mockFetch([]);
-    await client(fn).search({ center, radiusKm: 5, cuisine: "ramen" });
+    await client(fn).search({ center, radiusKm: 5, query: "ramen" });
     const { url, init } = calls[0]!;
     expect(url).toBe("https://places.googleapis.com/v1/places:searchText");
     const headers = init.headers as Record<string, string>;
@@ -48,7 +48,7 @@ describe("GoogleRestaurantClient", () => {
     expect(headers["x-goog-fieldmask"]).toContain("places.regularOpeningHours");
     expect(headers["x-goog-fieldmask"]).not.toContain("reviews");
     const body = JSON.parse(init.body as string);
-    expect(body.textQuery).toBe("ramen restaurant");
+    expect(body.textQuery).toBe("ramen");
     expect(body.includedType).toBe("restaurant");
     expect(body.locationBias.circle).toEqual({
       center: { latitude: 43.65, longitude: -79.38 },

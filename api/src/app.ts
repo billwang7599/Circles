@@ -7,7 +7,6 @@ import {
 } from "@circles/ai";
 import {
   PlanRequestSchema,
-  findCity,
   type PlanJob,
   type PlanResponse,
 } from "@circles/shared";
@@ -22,7 +21,14 @@ export function defaultDeps(): PlanDeps {
   const restaurants = createRestaurantClient();
   console.log(`LLM: ${llm.description}`);
   console.log(`Restaurants: ${restaurants.description}`);
-  return { llm: new LlmClient(llm.model), restaurants: restaurants.client };
+  const client = new LlmClient(llm.model, {
+    onUsage: (u) =>
+      console.log(
+        `LLM ${u.call}: ${u.ms}ms, in ${u.inputTokens ?? "?"}, out ${u.outputTokens ?? "?"}` +
+          (u.reasoningTokens ? ` (reasoning ${u.reasoningTokens})` : ""),
+      ),
+  });
+  return { llm: client, restaurants: restaurants.client };
 }
 
 export interface AppOptions {
@@ -47,14 +53,6 @@ export function createApp(
       return {
         error: c.json(
           { error: "invalid request", issues: parsed.error.issues },
-          400,
-        ),
-      };
-    }
-    if (!findCity(parsed.data.group.city)) {
-      return {
-        error: c.json(
-          { error: `unknown city: ${parsed.data.group.city}` },
           400,
         ),
       };

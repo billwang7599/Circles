@@ -7,25 +7,48 @@ import {
 } from "./fakes.ts";
 import { LlmClient } from "./llm.ts";
 import { PlannerError, planEvent, type PlanDeps } from "./plan.ts";
+import type { RestaurantClient, RestaurantQuery } from "./restaurants.ts";
 
 // Saturday 2026-10-03 11:00 local (Toronto, EDT).
 const NOW = new Date("2026-10-03T15:00:00Z");
 
+const toronto = {
+  name: "Toronto",
+  lat: 43.6532,
+  lng: -79.3832,
+  timezone: "America/Toronto",
+};
 const user = (over: Partial<User> = {}): User => ({
   id: "u",
   name: "U",
+  location: toronto,
   budget: 40,
-  maxDistanceKm: 10,
   unavailable: [],
   ...over,
 });
-const request = (members: User[], text = "dinner"): PlanRequest => ({
+const request = (
+  members: User[],
+  text = "dinner",
+  over: Partial<PlanRequest> = {},
+): PlanRequest => ({
   text,
-  group: { city: "toronto", timezone: "America/Toronto", members },
+  group: { members },
+  location: toronto,
+  radiusKm: 15,
+  filterModes: {
+    budget: "hard",
+    openHours: "hard",
+    partySize: "hard",
+    area: "prefer",
+  },
+  ...over,
 });
-const deps = (overrides: FakeLlmOverrides = {}): PlanDeps => ({
+const deps = (
+  overrides: FakeLlmOverrides = {},
+  restaurants: RestaurantClient = new FakeRestaurantClient(),
+): PlanDeps => ({
   llm: new LlmClient(createFakeLlmModel(overrides)),
-  restaurants: new FakeRestaurantClient(),
+  restaurants,
   now: () => NOW,
 });
 
@@ -41,9 +64,37 @@ describe("planEvent", () => {
     ).toBe(true);
   });
 
-  test("no returned option violates a known hard constraint", async () => {
-    // Budget 10 allows price level 1 at most; one-star-high places must not appear.
-    const r = await planEvent(request([user({ budget: 10 })]), deps());
+  test("passes the group's own words to the restaurant search, unparsed", async () => {
+    const seen: RestaurantQuery[] = [];
+    const spy: RestaurantClient = {
+      search: async (q) => {
+        seen.push(q);
+        return new FakeRestaurantClient().search(q);
+      },
+    };
+    await planEvent(request([user()], "cheap ramen please"), deps({}, spy));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.query).toBe("cheap ramen please");
+  });
+
+  test("party size is the member count, not anything typed", async () => {
+    // Nine members: only places that seat nine or more, or are unknown, can pass.
+    const nine = Array.from({ length: 9 }, (_, i) => user({ id: `u${i}` }));
+    const r = await planEvent(request(nine, "dinner for 2"), deps());
+    if (r.status !== "ok") throw new Error("expected ok");
+    expect(
+      r.candidates.every(
+        (c) => c.maxPartySize === undefined || c.maxPartySize >= 9,
+      ),
+    ).toBe(true);
+    expect(r.candidates.some((c) => c.maxPartySize === 4)).toBe(false);
+  });
+
+  test("the strictest member budget limits every place", async () => {
+    const r = await planEvent(
+      request([user({ budget: 100 }), user({ id: "v", budget: 10 })]),
+      deps(),
+    );
     if (r.status !== "ok") throw new Error("expected ok");
     for (const c of r.candidates) {
       if (c.priceLevel !== undefined)
@@ -51,22 +102,37 @@ describe("planEvent", () => {
     }
   });
 
-  test("respects a cuisine in the request", async () => {
-    const r = await planEvent(request([user()], "ramen dinner"), deps());
+  test("each option lists times when the group is free and the place is open", async () => {
+    const r = await planEvent(request([user()], "ramen"), deps());
     if (r.status !== "ok") throw new Error("expected ok");
-    expect(r.candidates.every((c) => c.cuisines?.includes("ramen"))).toBe(true);
+    const withHours = r.options.filter((o) => {
+      const c = r.candidates.find((x) => x.id === o.candidateId)!;
+      return c.openingHours !== undefined;
+    });
+    expect(withHours.length).toBeGreaterThan(0);
+    for (const o of withHours) {
+      expect(o.availableTimes.length).toBeGreaterThan(0);
+      for (const t of o.availableTimes) expect(t.end > t.start).toBe(true);
+    }
   });
 
-  test("party size comes from the request when larger than the group", async () => {
-    const r = await planEvent(request([user()], "dinner for 9"), deps());
+  test("times when a member is unavailable are never offered", async () => {
+    // Saturday 11:00-23:00 local is blocked for one member, so Sat times must not appear.
+    const blocked = {
+      start: "2026-10-03T15:00:00Z",
+      end: "2026-10-04T03:00:00Z",
+    };
+    const r = await planEvent(
+      request([user(), user({ id: "v", unavailable: [blocked] })], "ramen"),
+      deps(),
+    );
     if (r.status !== "ok") throw new Error("expected ok");
-    expect(r.fields.partySize).toBe(9);
-    // Places that seat fewer than 9 are filtered out (known capacity only).
-    expect(
-      r.candidates.every(
-        (c) => c.maxPartySize === undefined || c.maxPartySize >= 9,
-      ),
-    ).toBe(true);
+    for (const o of r.options) {
+      for (const t of o.availableTimes) {
+        const overlaps = t.start < blocked.end && blocked.start < t.end;
+        expect(overlaps).toBe(false);
+      }
+    }
   });
 
   test("unverified data is labelled in the constraint checks", async () => {
@@ -92,16 +158,294 @@ describe("planEvent", () => {
   });
 
   test("names the constraint that eliminated the most candidates", async () => {
-    const r = await planEvent(request([user({ maxDistanceKm: 0.05 })]), deps());
-    expect(r).toMatchObject({ status: "no_matches", reason: "distance" });
+    // Known opening hours that never cover a meal slot: every place is closed.
+    const closed: RestaurantClient = {
+      search: async (q) =>
+        (await new FakeRestaurantClient().search(q)).map((c) => ({
+          ...c,
+          openingHours: [{ openMin: 0, closeMin: 1 }],
+        })),
+    };
+    const r = await planEvent(request([user()]), deps({}, closed));
+    expect(r).toMatchObject({ status: "no_matches", reason: "openHours" });
   });
 
-  test("a cuisine with no restaurants gives no_restaurants", async () => {
+  test("closeness is a preference: nearer places come first, and none are dropped for distance", async () => {
+    // A radius of 50 metres would exclude nearly everything if it were a hard rule.
     const r = await planEvent(
-      request([user()], "french dinner"),
-      deps({ parse: () => ({ cuisine: "nonexistent" }) }),
+      request([user()], "dinner", { radiusKm: 0.05 }),
+      deps(),
     );
+    if (r.status !== "ok") throw new Error("expected ok");
+    const distances = r.options.map((o) => o.distanceKm);
+    expect(distances).toEqual([...distances].sort((a, b) => a - b));
+    // Candidates are handed over nearest first too.
+    const all = r.candidates.map((c) => c.id);
+    expect(all.length).toBeGreaterThan(r.options.length);
+  });
+
+  test("each option says how far it is from the search location", async () => {
+    const r = await planEvent(request([user()]), deps());
+    if (r.status !== "ok") throw new Error("expected ok");
+    for (const o of r.options) {
+      expect(o.distanceKm).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(o.distanceKm)).toBe(true);
+    }
+  });
+
+  test("searches where the planner chose, out to the chosen radius", async () => {
+    const seen: RestaurantQuery[] = [];
+    const spy: RestaurantClient = {
+      search: async (q) => {
+        seen.push(q);
+        return [];
+      },
+    };
+    const east = { ...toronto, name: "East", lat: 43.7, lng: -79.2 };
+    await planEvent(
+      request([user()], "dinner", { location: east, radiusKm: 8 }),
+      deps({}, spy),
+    );
+    expect(seen[0]).toMatchObject({
+      center: { lat: 43.7, lng: -79.2 },
+      radiusKm: 8,
+    });
+  });
+
+  test("members' own positions do not limit the search", async () => {
+    // A member far from the search location does not stop a plan there.
+    const far = { ...toronto, name: "Far", lat: 49.28, lng: -123.12 };
+    const r = await planEvent(
+      request([user(), user({ id: "v", location: far })]),
+      deps(),
+    );
+    expect(r.status).toBe("ok");
+  });
+
+  test("a search with no results gives no_restaurants", async () => {
+    const empty: RestaurantClient = { search: async () => [] };
+    const r = await planEvent(request([user()]), deps({}, empty));
     expect(r).toMatchObject({ status: "no_matches", reason: "no_restaurants" });
+  });
+
+  test("mealtimes follow the search location's time zone, not the members'", async () => {
+    // Same group and clock, searched in Vancouver. Opening hours are local to the place,
+    // so the same free time maps to a different local hour than in Toronto.
+    const vancouver = {
+      name: "Vancouver",
+      lat: 49.2827,
+      lng: -123.1207,
+      timezone: "America/Vancouver",
+    };
+    const inToronto = await planEvent(request([user()]), deps());
+    const inVancouver = await planEvent(
+      request([user()], "dinner", { location: vancouver }),
+      deps(),
+    );
+    if (inToronto.status !== "ok" || inVancouver.status !== "ok")
+      throw new Error("expected ok");
+    const first = (r: typeof inToronto) =>
+      r.options[0]!.availableTimes[0]!.start;
+    expect(first(inToronto)).not.toBe(first(inVancouver));
+  });
+
+  test("reports progress through the stages", async () => {
+    const stages: string[] = [];
+    await planEvent(request([user()]), deps(), {
+      onProgress: (s) => stages.push(s),
+    });
+    expect(stages).toEqual(["searching", "ranking"]);
+  });
+});
+
+describe("planEvent filter modes", () => {
+  const modes = (over: Record<string, "hard" | "prefer">) => ({
+    budget: "hard" as const,
+    openHours: "hard" as const,
+    partySize: "hard" as const,
+    area: "prefer" as const,
+    ...over,
+  });
+  // Far Out Pizza (fake-8) is about 28 km from the centre; Trattoria Roma (fake-2) is near.
+  const italian = (over: Record<string, "hard" | "prefer">, user1 = user()) =>
+    planEvent(
+      request([user1], "italian", { filterModes: modes(over) }),
+      deps(),
+      { n: 8 },
+    );
+
+  test("location as a hard filter drops places outside the radius", async () => {
+    const r = await italian({ area: "hard" });
+    if (r.status !== "ok") throw new Error("expected ok");
+    expect(r.options.map((o) => o.candidateId)).not.toContain("fake-8");
+  });
+
+  test("location as a preference keeps far places but ranks them below near ones", async () => {
+    const r = await italian({ area: "prefer" });
+    if (r.status !== "ok") throw new Error("expected ok");
+    const ids = r.options.map((o) => o.candidateId);
+    expect(ids).toContain("fake-8");
+    expect(ids.indexOf("fake-2")).toBeLessThan(ids.indexOf("fake-8"));
+    const far = r.options.find((o) => o.candidateId === "fake-8")!;
+    expect(far.unmet).toEqual(["area"]);
+    expect(far.constraintChecks.join(" ")).toContain("not met");
+    expect(far.constraintChecks.join(" ")).toContain("(preferred)");
+  });
+
+  test("a hard filter that removes everything gives a no-match; preferring it does not", async () => {
+    const tiny = { radiusKm: 0.05 };
+    const hard = await planEvent(
+      request([user()], "dinner", {
+        ...tiny,
+        filterModes: modes({ area: "hard" }),
+      }),
+      deps(),
+    );
+    expect(hard).toMatchObject({ status: "no_matches", reason: "area" });
+    const soft = await planEvent(
+      request([user()], "dinner", {
+        ...tiny,
+        filterModes: modes({ area: "prefer" }),
+      }),
+      deps(),
+    );
+    expect(soft.status).toBe("ok");
+  });
+
+  test("budget as a preference keeps pricey places below the ones within budget", async () => {
+    const poor = user({ budget: 10 }); // price level 1 at most
+    const hard = await planEvent(
+      request([poor], "dinner", { filterModes: modes({ budget: "hard" }) }),
+      deps(),
+      { n: 8 },
+    );
+    const soft = await planEvent(
+      request([poor], "dinner", { filterModes: modes({ budget: "prefer" }) }),
+      deps(),
+      { n: 8 },
+    );
+    if (hard.status !== "ok" || soft.status !== "ok")
+      throw new Error("expected ok");
+    const priceOf = (r: typeof hard, id: string) =>
+      r.candidates.find((c) => c.id === id)!.priceLevel ?? 0;
+    expect(hard.options.every((o) => priceOf(hard, o.candidateId) <= 1)).toBe(
+      true,
+    );
+    expect(soft.options.length).toBeGreaterThan(hard.options.length);
+    // Every place that meets the preference comes before every place that misses it.
+    const firstMiss = soft.options.findIndex((o) => o.unmet.length > 0);
+    expect(firstMiss).toBeGreaterThan(0);
+    expect(
+      soft.options.slice(firstMiss).every((o) => o.unmet.includes("budget")),
+    ).toBe(true);
+    expect(
+      soft.options.slice(0, firstMiss).every((o) => o.unmet.length === 0),
+    ).toBe(true);
+  });
+
+  test("open hours as a preference keeps a place that is closed when the group is free", async () => {
+    const closed: RestaurantClient = {
+      search: async (q) =>
+        (await new FakeRestaurantClient().search(q)).map((c) => ({
+          ...c,
+          openingHours: [{ openMin: 0, closeMin: 1 }],
+        })),
+    };
+    const r = await planEvent(
+      request([user()], "dinner", {
+        filterModes: modes({ openHours: "prefer" }),
+      }),
+      deps({}, closed),
+    );
+    if (r.status !== "ok") throw new Error("expected ok");
+    expect(r.options[0]!.unmet).toContain("openHours");
+    expect(r.options[0]!.availableTimes).toEqual([]);
+  });
+
+  test("party size as a preference keeps a place too small for the group", async () => {
+    const nine = Array.from({ length: 9 }, (_, i) => user({ id: `u${i}` }));
+    const r = await planEvent(
+      request(nine, "dinner", { filterModes: modes({ partySize: "prefer" }) }),
+      deps(),
+      { n: 8 },
+    );
+    if (r.status !== "ok") throw new Error("expected ok");
+    const small = r.options.filter((o) => o.unmet.includes("partySize"));
+    expect(small.length).toBeGreaterThan(0);
+  });
+
+  test("the filter modes default to must-have except location", async () => {
+    const r = await planEvent(
+      {
+        text: "dinner",
+        group: { members: [user()] },
+        location: toronto,
+      } as never,
+      deps(),
+    );
+    expect(r.status).toBe("ok");
+  });
+});
+
+describe("planEvent when must-haves leave few places", () => {
+  // Only these three places are found: Noodle House ($), Trattoria Roma ($$$), Le Bistro ($$$$).
+  const three: RestaurantClient = {
+    search: async (q) =>
+      (await new FakeRestaurantClient().search(q)).filter((c) =>
+        ["fake-1", "fake-2", "fake-5"].includes(c.id),
+      ),
+  };
+  const poor = user({ budget: 10 }); // price level 1 at most
+
+  test("returns the places that fit, with a notice saying why there are fewer than asked for", async () => {
+    const r = await planEvent(request([poor]), deps({}, three), { n: 3 });
+    if (r.status !== "ok") throw new Error("expected ok");
+    expect(r.options.map((o) => o.candidateId)).toEqual(["fake-1"]);
+    expect(r.notice).toContain("Only 1 of 3 places");
+    expect(r.notice).toContain("Budget rules out 2");
+    expect(r.notice).toContain("Prefer");
+  });
+
+  test("no notice when enough places meet the must-haves", async () => {
+    const r = await planEvent(request([user()]), deps(), { n: 3 });
+    if (r.status !== "ok") throw new Error("expected ok");
+    expect(r.notice).toBeUndefined();
+  });
+
+  test("the notice names only must-haves, not preferences", async () => {
+    const r = await planEvent(
+      request([poor], "dinner", {
+        filterModes: {
+          budget: "hard",
+          openHours: "hard",
+          partySize: "hard",
+          area: "prefer",
+        },
+      }),
+      deps({}, three),
+      { n: 3 },
+    );
+    if (r.status !== "ok") throw new Error("expected ok");
+    expect(r.notice).not.toContain("Location");
+  });
+
+  test("switching the filter to Prefer fills the list instead", async () => {
+    const r = await planEvent(
+      request([poor], "dinner", {
+        filterModes: {
+          budget: "prefer",
+          openHours: "hard",
+          partySize: "hard",
+          area: "prefer",
+        },
+      }),
+      deps({}, three),
+      { n: 3 },
+    );
+    if (r.status !== "ok") throw new Error("expected ok");
+    expect(r.options).toHaveLength(3);
+    expect(r.notice).toBeUndefined();
+    expect(r.options[0]!.candidateId).toBe("fake-1"); // the one within budget comes first
   });
 });
 
@@ -179,28 +523,29 @@ describe("planEvent guards against bad model output", () => {
     ).rejects.toBeInstanceOf(PlannerError);
   });
 
-  test("retries an invalid parse, then throws PlannerError", async () => {
-    await expect(
-      planEvent(request([user()]), deps({ parse: () => ({ partySize: -2 }) })),
-    ).rejects.toBeInstanceOf(PlannerError);
-  });
-
-  test("a parsed window outside everyone's free time is rejected", async () => {
-    const blocked = {
-      start: "2026-10-03T22:00:00Z",
-      end: "2026-10-04T02:00:00Z",
-    };
+  test("an empty list of picks is a bad answer: retried, then recovered", async () => {
+    let calls = 0;
     const r = await planEvent(
-      request([user({ unavailable: [blocked] })]),
+      request([user()]),
       deps({
-        parse: () => ({
-          window: {
-            start: "2026-10-03T23:00:00Z",
-            end: "2026-10-04T01:00:00Z",
-          },
-        }),
+        rank: (candidates) => {
+          calls++;
+          return calls === 1
+            ? { picks: [] }
+            : {
+                picks: [{ candidateId: candidates[0]!.id, rationale: "Fine." }],
+              };
+        },
       }),
     );
-    expect(r).toMatchObject({ status: "no_matches", reason: "no_free_time" });
+    expect(calls).toBe(2);
+    if (r.status !== "ok") throw new Error("expected ok");
+    expect(r.options).toHaveLength(1);
+  });
+
+  test("a model that never picks anything fails instead of returning an empty plan", async () => {
+    await expect(
+      planEvent(request([user()]), deps({ rank: () => ({ picks: [] }) })),
+    ).rejects.toBeInstanceOf(PlannerError);
   });
 });
