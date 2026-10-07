@@ -6,7 +6,7 @@ import {
   editsToPatch,
   effectiveBudget,
 } from "./chat.ts";
-import { createFakeLlmModel } from "./fakes.ts";
+import { createFakeLlmModel } from "./devFakes.ts";
 import { LlmClient } from "./llm.ts";
 import { PlannerError } from "./validated.ts";
 

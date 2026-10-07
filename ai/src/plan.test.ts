@@ -4,7 +4,7 @@ import {
   FakeRestaurantClient,
   createFakeLlmModel,
   type FakeLlmOverrides,
-} from "./fakes.ts";
+} from "./devFakes.ts";
 import { LlmClient } from "./llm.ts";
 import { PlannerError, planEvent, type PlanDeps } from "./plan.ts";
 import type { RestaurantClient, RestaurantQuery } from "./restaurants.ts";

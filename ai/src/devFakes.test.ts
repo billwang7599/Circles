@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { FakeRestaurantClient, createFakeLlmModel } from "./fakes.ts";
+import { FakeRestaurantClient, createFakeLlmModel } from "./devFakes.ts";
 import { LlmClient, RankedPickSchema } from "./llm.ts";
 
 const center = { lat: 43.65, lng: -79.38 };
