@@ -12,7 +12,6 @@ on:
 defaults:
   run:
     shell: bash
-    working-directory: mobile
 
 jobs:
   ci:
@@ -47,6 +46,7 @@ jobs:
       - id: ecr
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
       - name: Build and push image
+        working-directory: mobile
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         # Tags are immutable, so a re-run of the same commit reuses the image it already pushed.
