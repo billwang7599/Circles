@@ -55,7 +55,6 @@ function Form({
 }) {
   const { registration, defaults } = view.me;
   const initialCents = registration?.budgetCents ?? defaults.budgetCents;
-  const [attending, setAttending] = useState(registration?.attending ?? true);
   const [budget, setBudget] = useState(
     initialCents === undefined ? "" : (initialCents / 100).toFixed(2),
   );
@@ -90,11 +89,11 @@ function Form({
   function submit() {
     const dollars = Number(budget);
     const budgetCents =
-      attending && budget.trim() !== "" && Number.isFinite(dollars)
+      budget.trim() !== "" && Number.isFinite(dollars)
         ? Math.round(dollars * 100)
         : undefined;
     const parsed = RegistrationInput.safeParse({
-      attending,
+      attending: true,
       budgetCents,
       busy,
       preferences,
@@ -111,17 +110,15 @@ function Form({
   return (
     <>
       <View style={styles.fields}>
-        {attending ? (
-          <Field
-            label="Budget per person"
-            icon="lock"
-            value={budget}
-            onChangeText={setBudget}
-            error={issue("budgetCents")}
-            keyboardType="decimal-pad"
-            inputMode="decimal"
-          />
-        ) : null}
+        <Field
+          label="Budget per person"
+          icon="lock"
+          value={budget}
+          onChangeText={setBudget}
+          error={issue("budgetCents")}
+          keyboardType="decimal-pad"
+          inputMode="decimal"
+        />
         <View style={styles.field}>
           <Text variant="label">Busy times</Text>
           {dates.map((date) => (
@@ -153,11 +150,6 @@ function Form({
             ))}
           </View>
         </View>
-        <Chip
-          label="Can't make it"
-          selected={!attending}
-          onPress={() => setAttending((current) => !current)}
-        />
       </View>
       {save.error ? <Text color="danger">{save.error.message}</Text> : null}
       <Button title="Save" onPress={submit} loading={save.isPending} />
