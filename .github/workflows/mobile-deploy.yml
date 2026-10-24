@@ -1,0 +1,68 @@
+name: Mobile Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - mobile/**
+      - .github/workflows/mobile-ci.yml
+      - .github/workflows/mobile-deploy.yml
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+    working-directory: mobile
+
+jobs:
+  ci:
+    if: vars.AWS_ROLE_ARN != ''
+    uses: ./.github/workflows/mobile-ci.yml
+
+  api:
+    needs: ci
+    if: vars.AWS_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-api
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      ECS_SERVICE_ARN: ${{ vars.ECS_SERVICE_ARN }}
+    steps:
+      - name: Check repo variables
+        run: |
+          [ -n "$ECR_REPOSITORY" ] || { echo "::error::Repository variable ECR_REPOSITORY is empty"; exit 1; }
+          [ -n "$ECS_SERVICE_ARN" ] || { echo "::error::Repository variable ECS_SERVICE_ARN is empty"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ca-central-1' }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        # Tags are immutable, so a re-run of the same commit reuses the image it already pushed.
+        run: |
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$GITHUB_SHA" > /dev/null 2>&1; then
+            echo "Image for $GITHUB_SHA is already in ECR"
+          else
+            docker build -f api/Dockerfile -t "$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA" .
+            docker push "$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
+          fi
+      - name: Update ECS service
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        # Reuse the live container block (port, environment, secrets, logs) and swap only the image.
+        run: |
+          aws ecs describe-express-gateway-service --service-arn "$ECS_SERVICE_ARN" \
+            --query 'service.activeConfigurations[0].primaryContainer' --output json \
+            | jq --arg image "$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA" '.image = $image | del(.. | nulls)' > container.json
+          aws ecs update-express-gateway-service --service-arn "$ECS_SERVICE_ARN" --primary-container file://container.json

@@ -1,0 +1,32 @@
+name: Mobile CI
+
+on:
+  push:
+    paths:
+      - mobile/**
+      - .github/workflows/mobile-ci.yml
+  pull_request:
+    paths:
+      - mobile/**
+      - .github/workflows/mobile-ci.yml
+  workflow_call:
+
+defaults:
+  run:
+    working-directory: mobile
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
