@@ -1,59 +1,59 @@
+import { MemberSchema, type Member } from "@circles/ai";
 import {
-  CITIES,
-  UserSchema,
-  cityLocation,
-  zonedToUtc,
-  type User,
-} from "@circles/ai";
+  AREAS,
+  Part,
+  datesIn,
+  windowFor,
+  type BusyPart,
+} from "@circles/shared";
 import { useState } from "react";
 import { btn, field } from "./ui";
 
-interface Block {
-  start: string; // datetime-local value, read in the user's own time zone
-  end: string;
-}
-
-// datetime-local gives a wall-clock time with no zone. Read it in the user's zone and store
-// the UTC instant, so everyone's free time can be compared in one zone.
-const toUtc = (local: string, timeZone: string) =>
-  local ? zonedToUtc(local, timeZone) : "";
+const formatDate = (date: string) =>
+  new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(date));
 
 export function UserForm({
   onSave,
   onCancel,
 }: {
-  onSave: (u: User) => void;
+  onSave: (u: Member) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
-  // Picked by hand for now. Later this comes from the device's live location.
-  const [cityId, setCityId] = useState(CITIES[0]!.id);
   const [budget, setBudget] = useState("");
-  const [blocks, setBlocks] = useState<Block[]>([]);
+  const [busy, setBusy] = useState<BusyPart[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
 
-  const city = CITIES.find((c) => c.id === cityId)!;
-  const setBlock = (i: number, patch: Partial<Block>) =>
-    setBlocks((bs) => bs.map((b, j) => (j === i ? { ...b, ...patch } : b)));
+  // Every area is in one zone, and the longest plan window is two weeks.
+  const { windowStart, windowEnd } = windowFor(
+    "twoWeeks",
+    AREAS[0]!.timezone,
+    new Date(),
+  );
+  const dates = datesIn(windowStart, windowEnd);
+  const isBusy = (date: string, part: Part) =>
+    busy.some((b) => b.date === date && b.part === part);
+  const toggleBusy = (date: string, part: Part) =>
+    setBusy((bs) =>
+      isBusy(date, part)
+        ? bs.filter((b) => b.date !== date || b.part !== part)
+        : [...bs, { date, part }],
+    );
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    let unavailable;
-    try {
-      unavailable = blocks.map((b) => ({
-        start: toUtc(b.start, city.timezone),
-        end: toUtc(b.end, city.timezone),
-      }));
-    } catch {
-      setErrors(["Enter a start and end for every time block"]);
-      return;
-    }
-    const result = UserSchema.safeParse({
+    const result = MemberSchema.safeParse({
       id: crypto.randomUUID(),
       name,
-      location: cityLocation(city),
-      budget: budget === "" ? NaN : Number(budget),
-      unavailable,
+      budgetCents:
+        budget.trim() === "" ? undefined : Math.round(Number(budget) * 100),
+      busy,
+      preferences: [],
     });
     if (!result.success) {
       setErrors(
@@ -73,36 +73,22 @@ export function UserForm({
     >
       <h3 className="font-display text-lg font-bold">Add a person</h3>
 
-      <label className="block">
-        <span className="text-sm font-medium">Name</span>
-        <input
-          className={`${field} mt-1.5`}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </label>
-
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <span className="text-sm font-medium">Where they are</span>
-          <select
+          <span className="text-sm font-medium">Name</span>
+          <input
             className={`${field} mt-1.5`}
-            value={cityId}
-            onChange={(e) => setCityId(e.target.value)}
-          >
-            {CITIES.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
         </label>
         <label className="block">
-          <span className="text-sm font-medium">Budget per person</span>
+          <span className="text-sm font-medium">Budget per person, $</span>
           <input
             className={`${field} mt-1.5`}
             type="number"
             min="0"
+            step="0.01"
             value={budget}
             onChange={(e) => setBudget(e.target.value)}
           />
@@ -110,46 +96,32 @@ export function UserForm({
       </div>
 
       <fieldset>
-        <legend className="text-sm font-medium">When they're not free</legend>
-        <p className="text-xs text-ink-faint">
-          Times are in {city.timezone}. We store them as UTC so everyone's
-          schedules line up.
-        </p>
-        <ul className="mt-2 space-y-2">
-          {blocks.map((b, i) => (
-            <li key={i} className="flex flex-wrap items-center gap-2">
-              <input
-                className={`${field} w-auto flex-1`}
-                type="datetime-local"
-                aria-label={`Block ${i + 1} start`}
-                value={b.start}
-                onChange={(e) => setBlock(i, { start: e.target.value })}
-              />
-              <span className="text-sm text-ink-soft">to</span>
-              <input
-                className={`${field} w-auto flex-1`}
-                type="datetime-local"
-                aria-label={`Block ${i + 1} end`}
-                value={b.end}
-                onChange={(e) => setBlock(i, { end: e.target.value })}
-              />
-              <button
-                type="button"
-                className={btn.danger}
-                onClick={() => setBlocks((bs) => bs.filter((_, j) => j !== i))}
-              >
-                Remove
-              </button>
+        <legend className="text-sm font-medium">When they're busy</legend>
+        <ul className="mt-2 space-y-1">
+          {dates.map((date) => (
+            <li key={date} className="flex items-center gap-2">
+              <span className="w-24 shrink-0 text-xs text-ink-soft">
+                {formatDate(date)}
+              </span>
+              {Part.options.map((part) => (
+                <button
+                  key={part}
+                  type="button"
+                  aria-pressed={isBusy(date, part)}
+                  aria-label={`${formatDate(date)} ${part}`}
+                  onClick={() => toggleBusy(date, part)}
+                  className={`flex-1 rounded-full border px-2 py-0.5 text-xs capitalize ${
+                    isBusy(date, part)
+                      ? "border-brand bg-brand text-white"
+                      : "border-line text-ink-soft hover:border-brand"
+                  }`}
+                >
+                  {part}
+                </button>
+              ))}
             </li>
           ))}
         </ul>
-        <button
-          type="button"
-          className={`${btn.quiet} mt-1 -ml-2`}
-          onClick={() => setBlocks((bs) => [...bs, { start: "", end: "" }])}
-        >
-          Add a time block
-        </button>
       </fieldset>
 
       {errors.length > 0 && (

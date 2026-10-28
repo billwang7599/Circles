@@ -1,20 +1,13 @@
-import { CITIES, UserSchema, cityLocation, type User } from "@circles/ai";
+import { MemberSchema, type Member } from "@circles/ai";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 
 const KEY = "circles.users";
 
-function load(): User[] {
+function load(): Member[] {
   try {
     const raw = localStorage.getItem(KEY);
-    const stored: unknown[] = raw ? JSON.parse(raw) : [];
-    // Users saved before locations existed get a default one, so they aren't lost.
-    const withLocation = stored.map((u) =>
-      u && typeof u === "object" && !("location" in u)
-        ? { ...u, location: cityLocation(CITIES[0]!) }
-        : u,
-    );
-    const parsed = z.array(UserSchema).safeParse(withLocation);
+    const parsed = z.array(MemberSchema).safeParse(raw ? JSON.parse(raw) : []);
     return parsed.success ? parsed.data : [];
   } catch {
     return []; // storage blocked or corrupt: start empty
@@ -23,7 +16,7 @@ function load(): User[] {
 
 /** Users held in state and mirrored to localStorage so they survive refreshes. */
 export function useUsers() {
-  const [users, setUsers] = useState<User[]>(load);
+  const [users, setUsers] = useState<Member[]>(load);
 
   useEffect(() => {
     try {
@@ -35,8 +28,8 @@ export function useUsers() {
 
   return {
     users,
-    addUser: (u: User) => setUsers((prev) => [...prev, u]),
-    addUsers: (us: User[]) => setUsers((prev) => [...prev, ...us]),
+    addUser: (u: Member) => setUsers((prev) => [...prev, u]),
+    addUsers: (us: Member[]) => setUsers((prev) => [...prev, ...us]),
     removeUser: (id: string) =>
       setUsers((prev) => prev.filter((u) => u.id !== id)),
   };

@@ -1,4 +1,5 @@
-import type { PlanJob, PlanRequest, PlanResult, TimeWindow } from "@circles/ai";
+import type { PlanJob, PlanRequest, PlanResult } from "@circles/ai";
+import type { Interval } from "@circles/shared";
 
 export interface SavedOption {
   candidateId: string;
@@ -6,7 +7,7 @@ export interface SavedOption {
   rationale: string;
   constraintChecks: string[];
   /** When the group is free and the place is open. Empty if the place's hours are unknown. */
-  availableTimes: TimeWindow[];
+  availableTimes: Interval[];
   /** How far from the search location. Missing on older saved plans. */
   distanceKm?: number;
   /** Preferences this place misses, such as "budget". Missing on older saved plans. */
@@ -33,7 +34,7 @@ export interface SavedPlan {
   id: string;
   createdAt: string;
   request: string;
-  /** Where the group is, such as "Toronto". */
+  /** Where the group is, such as "Uptown Waterloo, 4 km". */
   where?: string;
   /** Older saved plans stored a single city here. */
   cityName?: string;

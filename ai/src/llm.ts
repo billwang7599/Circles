@@ -48,7 +48,7 @@ Fields and values:
 - clearWhen: "true" only if they say any day or any time.
 - budgetPerPerson: dollars as a number string. For "increase, raise or bigger budget" with no amount, use 1.5 times the current budget. For lower, use 0.5 times.
 - radiusKm: kilometres as a number string.
-- cityId: a city id from the list, only if they ask to search somewhere else.
+- areaId: an area id from the list, only if they ask to search somewhere else.
 - budgetMode, openHoursMode, partySizeMode, areaMode: "hard" if it must hold, "prefer" if it is only a preference or can be flexible. budget is price, openHours is open when the group is free, partySize is fits the group, area is close to the location.
 
 Example (current budget 20): "find hotpot instead of buffet, on sunday, with a bigger budget" gives {"edits":[{"field":"query","value":"hotpot"},{"field":"days","value":"sunday"},{"field":"budgetPerPerson","value":"30"}]}`;
@@ -80,12 +80,12 @@ export interface InterpretInput {
   message: string;
   current: {
     query: string;
-    budgetPerPerson: number;
+    budgetDollars: number;
     radiusKm: number;
     location: string;
     when: string;
   };
-  cities: { id: string; name: string }[];
+  areas: { id: string; name: string }[];
 }
 
 export class LlmClient {
@@ -112,7 +112,7 @@ export class LlmClient {
   async interpret({
     message,
     current,
-    cities,
+    areas,
   }: InterpretInput): Promise<PlanEdits> {
     const started = Date.now();
     const { output, usage } = await generateText({
@@ -121,11 +121,11 @@ export class LlmClient {
       system: INTERPRET_SYSTEM,
       prompt: [
         `Current search: ${current.query}`,
-        `Current budget per person: ${current.budgetPerPerson}`,
+        `Current budget per person: ${current.budgetDollars}`,
         `Current radius km: ${current.radiusKm}`,
         `Current location: ${current.location}`,
         `Current when: ${current.when}`,
-        `Cities: ${JSON.stringify(cities)}`,
+        `Areas: ${JSON.stringify(areas)}`,
         `Message: ${message}`,
       ].join("\n"),
       output: Output.object({ schema: PlanEditsSchema }),

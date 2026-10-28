@@ -1,42 +1,52 @@
-import { subtractIntervals } from "./time.ts";
-import type { GroupContext, TimeWindow } from "./types.ts";
+import {
+  Part,
+  areaById,
+  datesIn,
+  partInterval,
+  subtractIntervals,
+  type Interval,
+} from "@circles/shared";
+import { mergeIntervals } from "./time.ts";
+import type { PlanRequest } from "./types.ts";
 
 /** Placeholder table: per-person budget to Google's 0-4 price level. Tune later. */
-const PRICE_LEVEL_CEILINGS = [0, 15, 30, 60]; // up to each value maps to level 0..3, above is 4
+const PRICE_LEVEL_CEILINGS_CENTS = [0, 1500, 3000, 6000]; // up to each value maps to level 0..3, above is 4
 
-export function priceLevelForBudget(budget: number): number {
-  const level = PRICE_LEVEL_CEILINGS.findIndex((ceiling) => budget <= ceiling);
+export function priceLevelForBudget(budgetCents: number): number {
+  const level = PRICE_LEVEL_CEILINGS_CENTS.findIndex(
+    (ceiling) => budgetCents <= ceiling,
+  );
   return level === -1 ? 4 : level;
 }
+
+// Without an override, the lowest budget: the cap must hold for everyone.
+export const effectiveBudgetCents = (request: PlanRequest): number =>
+  request.budgetCents ??
+  Math.min(...request.group.members.map((m) => m.budgetCents));
 
 export interface GroupConstraints {
   partySize: number;
   maxPriceLevel: number;
-  /** Times within the range when no member is unavailable. All UTC, whatever zone each member works in. */
-  freeWindows: TimeWindow[];
+  freeWindows: Interval[];
 }
 
-/**
- * Hard constraints derived in plain code, never by the LLM. A cap must hold for
- * everyone, so the group budget is the lowest member budget. Free time is the part of
- * the range when no member is unavailable. Everyone is assumed able to reach the place;
- * where to look is the planner's choice, not a per-person limit.
- */
 export function deriveConstraints(
-  group: GroupContext,
-  range: TimeWindow,
-  /** Replaces the lowest member budget when the planner set one. */
-  budgetPerPerson?: number,
+  request: PlanRequest,
+  now: Date,
 ): GroupConstraints {
-  const { members } = group;
+  const { members } = request.group;
+  const { timezone } = areaById(request.areaId);
+  const parts = datesIn(request.windowStart, request.windowEnd).flatMap(
+    (date) => Part.options.map((part) => partInterval(date, part, timezone)),
+  );
+  const busy = members.flatMap((m) =>
+    m.busy.map((b) => partInterval(b.date, b.part, timezone)),
+  );
+  const past = { start: new Date(0).toISOString(), end: now.toISOString() };
   return {
     partySize: members.length,
-    maxPriceLevel: priceLevelForBudget(
-      budgetPerPerson ?? Math.min(...members.map((m) => m.budget)),
-    ),
-    freeWindows: subtractIntervals(
-      range,
-      members.flatMap((m) => m.unavailable),
-    ),
+    maxPriceLevel: priceLevelForBudget(effectiveBudgetCents(request)),
+    // Merged so a meal can run across two free parts, such as late morning into lunch.
+    freeWindows: mergeIntervals(subtractIntervals(parts, [past, ...busy])),
   };
 }

@@ -38,19 +38,27 @@ function wallClockAsUtc(date: Date, timezone: string): number {
   );
 }
 
-function localDate(date: Date, timezone: string): string {
+export function localDate(date: Date, timezone: string): string {
   return new Date(wallClockAsUtc(date, timezone)).toISOString().slice(0, 10);
 }
 
-function addDays(date: string, days: number): string {
-  const [year, month, day] = date.split("-").map(Number);
+export function addDays(date: string, days: number): string {
+  const [year, month, day] = date.split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
   return new Date(Date.UTC(year, month - 1, day + days))
     .toISOString()
     .slice(0, 10);
 }
 
 function instantOf(date: string, hour: number, timezone: string): Date {
-  const [year, month, day] = date.split("-").map(Number);
+  const [year, month, day] = date.split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
   const wall = Date.UTC(year, month - 1, day, hour);
   let instant = wall;
   for (let i = 0; i < 2; i++) {

@@ -1,11 +1,10 @@
+import { addDays, localDate, type Interval, type Part } from "@circles/shared";
 import { WEEK_MIN, mergeIntervals, parseInstant, weekMinutes } from "./time.ts";
 import {
   type AvailabilitySlot,
   type Candidate,
   type OpeningPeriod,
-  type PartOfDay,
-  type TimeWindow,
-  type When,
+  type TimeFilter,
   WEEKDAYS,
 } from "./types.ts";
 
@@ -23,7 +22,7 @@ export interface SlotOptions {
 const MIN_MS = 60_000;
 
 /** A time window with its local week-minutes filled in. */
-export function toSlot(window: TimeWindow, timezone: string): AvailabilitySlot {
+export function toSlot(window: Interval, timezone: string): AvailabilitySlot {
   const startMin = weekMinutes(window.start, timezone);
   let endMin = weekMinutes(window.end, timezone);
   if (endMin <= startMin) endMin += WEEK_MIN;
@@ -35,7 +34,7 @@ export function toSlot(window: TimeWindow, timezone: string): AvailabilitySlot {
  * `durationMin`, kept if it starts within the allowed local hours.
  */
 export function generateSlots(
-  freeWindows: TimeWindow[],
+  freeWindows: Interval[],
   timezone: string,
   {
     durationMin = 120,
@@ -89,7 +88,7 @@ export function availableTimes(
   candidate: Candidate,
   slots: AvailabilitySlot[],
   maxRanges = 3,
-): TimeWindow[] {
+): Interval[] {
   const hours = candidate.openingHours;
   if (!hours) return [];
   const open = slots.filter((s) => openCovers(hours, s));
@@ -99,18 +98,20 @@ export function availableTimes(
 }
 
 /** Local start hours each part of the day covers, inclusive. */
-export const PART_HOURS: Record<PartOfDay, [number, number]> = {
+export const PART_HOURS: Record<Part, [number, number]> = {
   morning: [8, 11],
   afternoon: [12, 16],
   evening: [17, 21],
 };
 
 /**
- * Slot hours to generate for a "when". Asking for mornings needs slots before the default
- * 11:00 start, so the range widens to cover every part asked for.
+ * Slot hours to generate for a time filter. Asking for mornings needs slots before the
+ * default 11:00 start, so the range widens to cover every part asked for.
  */
-export function slotOptionsForWhen(when: When | undefined): SlotOptions {
-  const parts = when?.partsOfDay ?? [];
+export function slotOptionsForTime(
+  filter: TimeFilter | undefined,
+): SlotOptions {
+  const parts = filter?.partsOfDay ?? [];
   if (parts.length === 0) return {};
   const ranges = parts.map((p) => PART_HOURS[p]);
   return {
@@ -119,37 +120,22 @@ export function slotOptionsForWhen(when: When | undefined): SlotOptions {
   };
 }
 
-/** The date in the zone as "YYYY-MM-DD". */
-function localDate(ms: number, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(ms));
-}
-
-function addDays(date: string, days: number): string {
-  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
-
 /**
  * Keep only slots on the days and in the parts of the day asked for. Days such as
  * "tomorrow" and "weekend" are resolved here, from the clock and the zone, so the
  * model never does date arithmetic.
  */
-export function filterSlotsByWhen(
+export function filterSlotsByTime(
   slots: AvailabilitySlot[],
-  when: When | undefined,
+  filter: TimeFilter | undefined,
   timezone: string,
   now: Date,
 ): AvailabilitySlot[] {
-  const days = when?.days ?? [];
-  const parts = when?.partsOfDay ?? [];
+  const days = filter?.days ?? [];
+  const parts = filter?.partsOfDay ?? [];
   if (days.length === 0 && parts.length === 0) return slots;
 
-  const today = localDate(now.getTime(), timezone);
+  const today = localDate(now, timezone);
   const tomorrow = addDays(today, 1);
   const weekdayOk = (weekday: number, date: string) =>
     days.length === 0 ||
@@ -164,7 +150,7 @@ export function filterSlotsByWhen(
   return slots.filter((slot) => {
     const weekday = Math.floor(slot.startMin / 1440) % 7;
     const hour = Math.floor((slot.startMin % 1440) / 60);
-    const date = localDate(Date.parse(slot.start), timezone);
+    const date = localDate(new Date(slot.start), timezone);
     return (
       weekdayOk(weekday, date) &&
       (parts.length === 0 ||

@@ -1,20 +1,17 @@
+import { AREAS, Part, areaById } from "@circles/shared";
 import {
-  CITIES,
   FILTER_NAMES,
   DAY_SPECS,
   MAX_RADIUS_KM,
-  PARTS_OF_DAY,
   PlanEditsSchema,
   PlanRequestSchema,
-  cityLocation,
-  findCity,
   type DaySpec,
-  type PartOfDay,
   type PlanEdits,
   type PlanPatch,
   type PlanRequest,
-  type When,
+  type TimeFilter,
 } from "./types.ts";
+import { effectiveBudgetCents } from "./constraints.ts";
 import type { LlmClient } from "./llm.ts";
 import { validated } from "./validated.ts";
 
@@ -27,19 +24,17 @@ const LABELS = {
 
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-function describeWhen(when: When | undefined): string {
-  const days = when?.days ?? [];
-  const parts = when?.partsOfDay ?? [];
+function describeTimeFilter(filter: TimeFilter | undefined): string {
+  const days = filter?.days ?? [];
+  const parts = filter?.partsOfDay ?? [];
   if (days.length === 0 && parts.length === 0) return "any time";
   return [days.map(titleCase).join(" or "), parts.join(" or ")]
     .filter(Boolean)
     .join(", ");
 }
 
-/** The budget the plan is using now: the planner's override, or the lowest member budget. */
-export const effectiveBudget = (request: PlanRequest): number =>
-  request.budgetPerPerson ??
-  Math.min(...request.group.members.map((m) => m.budget));
+const dollars = (cents: number) =>
+  `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
 
 export interface ChangeResult {
   request: PlanRequest;
@@ -49,7 +44,7 @@ export interface ChangeResult {
 
 /**
  * Apply a chat patch to a plan. Pure and checked: the model only proposes values, and
- * this decides what actually changes and describes it. Unknown cities and no-op values
+ * this decides what actually changes and describes it. Unknown areas and no-op values
  * are ignored, so the list of changes is always true.
  */
 export function applyPatch(
@@ -66,33 +61,35 @@ export function applyPatch(
   }
 
   // An empty list is not an instruction: models fill unused fields with [], so only an
-  // explicit clearWhen removes the limit, and only a non-empty list changes it.
-  const newDays = patch.when?.days?.length ? patch.when.days : undefined;
-  const newParts = patch.when?.partsOfDay?.length
-    ? patch.when.partsOfDay
+  // explicit clear removes the limit, and only a non-empty list changes it.
+  const newDays = patch.timeFilter?.days?.length
+    ? patch.timeFilter.days
     : undefined;
-  // A day or part of the day asked for wins over a stray clearWhen.
-  const clear = patch.clearWhen && !newDays && !newParts;
+  const newParts = patch.timeFilter?.partsOfDay?.length
+    ? patch.timeFilter.partsOfDay
+    : undefined;
+  // A day or part of the day asked for wins over a stray clear.
+  const clear = patch.clearTimeFilter && !newDays && !newParts;
   if (clear || newDays || newParts) {
-    const days = clear ? [] : (newDays ?? request.when?.days ?? []);
+    const days = clear ? [] : (newDays ?? request.timeFilter?.days ?? []);
     const partsOfDay = clear
       ? []
-      : (newParts ?? request.when?.partsOfDay ?? []);
-    const when: When | undefined =
+      : (newParts ?? request.timeFilter?.partsOfDay ?? []);
+    const filter: TimeFilter | undefined =
       days.length || partsOfDay.length ? { days, partsOfDay } : undefined;
-    if (describeWhen(when) !== describeWhen(request.when)) {
-      if (when) next.when = when;
-      else delete next.when;
-      changes.push(`When: ${describeWhen(when)}`);
+    if (describeTimeFilter(filter) !== describeTimeFilter(request.timeFilter)) {
+      if (filter) next.timeFilter = filter;
+      else delete next.timeFilter;
+      changes.push(`When: ${describeTimeFilter(filter)}`);
     }
   }
 
-  if (patch.budgetPerPerson != null) {
-    const before = effectiveBudget(request);
-    if (patch.budgetPerPerson !== before) {
-      next.budgetPerPerson = patch.budgetPerPerson;
+  if (patch.budgetCents != null) {
+    const before = effectiveBudgetCents(request);
+    if (patch.budgetCents !== before) {
+      next.budgetCents = patch.budgetCents;
       changes.push(
-        `Budget: $${patch.budgetPerPerson} per person, was $${before}`,
+        `Budget: ${dollars(patch.budgetCents)} per person, was ${dollars(before)}`,
       );
     }
   }
@@ -102,12 +99,12 @@ export function applyPatch(
     changes.push(`Radius: ${patch.radiusKm} km, was ${request.radiusKm} km`);
   }
 
-  if (patch.cityId) {
-    const city = findCity(patch.cityId);
-    if (city && city.name !== request.location.name) {
-      next.location = cityLocation(city);
-      changes.push(`Location: ${city.name}, was ${request.location.name}`);
-    }
+  const area = AREAS.find((a) => a.id === patch.areaId);
+  if (area && area.id !== request.areaId) {
+    next.areaId = area.id;
+    changes.push(
+      `Location: ${area.name}, was ${areaById(request.areaId).name}`,
+    );
   }
 
   for (const name of FILTER_NAMES) {
@@ -144,7 +141,7 @@ function numberOf(value: string, what: string): number {
 export function editsToPatch(raw: PlanEdits): PlanPatch {
   const patch: PlanPatch = {};
   const days: DaySpec[] = [];
-  const parts: PartOfDay[] = [];
+  const parts: Part[] = [];
   for (const { field, value } of PlanEditsSchema.parse(raw).edits) {
     const v = value.trim();
     switch (field) {
@@ -158,17 +155,17 @@ export function editsToPatch(raw: PlanEdits): PlanPatch {
         break;
       }
       case "partsOfDay": {
-        const part = v.toLowerCase() as PartOfDay;
-        if (!PARTS_OF_DAY.includes(part))
-          throw new Error(`not a part of the day: ${value}`);
-        parts.push(part);
+        const part = Part.safeParse(v.toLowerCase());
+        if (!part.success) throw new Error(`not a part of the day: ${value}`);
+        parts.push(part.data);
         break;
       }
       case "clearWhen":
-        if (v.toLowerCase() === "true") patch.clearWhen = true;
+        if (v.toLowerCase() === "true") patch.clearTimeFilter = true;
         break;
       case "budgetPerPerson":
-        patch.budgetPerPerson = Math.round(numberOf(v, "budget"));
+        // The model speaks dollars.
+        patch.budgetCents = Math.round(numberOf(v, "budget") * 100);
         break;
       case "radiusKm": {
         const km = numberOf(v, "radius");
@@ -177,8 +174,8 @@ export function editsToPatch(raw: PlanEdits): PlanPatch {
         patch.radiusKm = km;
         break;
       }
-      case "cityId":
-        if (v) patch.cityId = v.toLowerCase();
+      case "areaId":
+        if (v) patch.areaId = v.toLowerCase();
         break;
       default: {
         const mode = v.toLowerCase();
@@ -192,7 +189,7 @@ export function editsToPatch(raw: PlanEdits): PlanPatch {
     }
   }
   if (days.length || parts.length) {
-    patch.when = {
+    patch.timeFilter = {
       ...(days.length ? { days } : {}),
       ...(parts.length ? { partsOfDay: parts } : {}),
     };
@@ -220,12 +217,12 @@ export async function changePlan(
         message,
         current: {
           query: request.text,
-          budgetPerPerson: effectiveBudget(request),
+          budgetDollars: effectiveBudgetCents(request) / 100,
           radiusKm: request.radiusKm,
-          location: request.location.name,
-          when: describeWhen(request.when),
+          location: areaById(request.areaId).name,
+          when: describeTimeFilter(request.timeFilter),
         },
-        cities: CITIES.map((c) => ({ id: c.id, name: c.name })),
+        areas: AREAS.map((a) => ({ id: a.id, name: a.name })),
       }),
     (raw) => editsToPatch(raw as PlanEdits),
     "interpret",

@@ -76,10 +76,10 @@ export default function App() {
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{u.name}</div>
                     <div className="text-xs text-ink-soft">
-                      {u.location.name}, budget {u.budget},{" "}
-                      {u.unavailable.length === 0
+                      Budget ${(u.budgetCents / 100).toFixed(2)},{" "}
+                      {u.busy.length === 0
                         ? "free all the time"
-                        : `busy ${u.unavailable.length} time${u.unavailable.length === 1 ? "" : "s"}`}
+                        : `busy ${u.busy.length} part${u.busy.length === 1 ? "" : "s"} of the day`}
                     </div>
                   </div>
                   <button

@@ -7,19 +7,14 @@ import {
   type PlanRequest,
   type RestaurantClient,
 } from "@circles/ai";
+import { areaById, windowFor } from "@circles/shared";
 import { describe, expect, test } from "vitest";
 import { PlanStore } from "./plans.ts";
 
-const toronto = {
-  name: "Toronto",
-  lat: 43.6532,
-  lng: -79.3832,
-  timezone: "America/Toronto",
-};
-
 const request: PlanRequest = {
   text: "ramen",
-  location: toronto,
+  areaId: "uptown",
+  ...windowFor("week", areaById("uptown").timezone, new Date()),
   radiusKm: 15,
   filterModes: {
     budget: "hard",
@@ -29,18 +24,7 @@ const request: PlanRequest = {
   },
   group: {
     members: [
-      {
-        id: "u",
-        name: "U",
-        location: {
-          name: "Toronto",
-          lat: 43.6532,
-          lng: -79.3832,
-          timezone: "America/Toronto",
-        },
-        budget: 40,
-        unavailable: [],
-      },
+      { id: "u", name: "U", budgetCents: 4000, busy: [], preferences: [] },
     ],
   },
 };

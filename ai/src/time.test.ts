@@ -1,11 +1,5 @@
 import { describe, expect, test } from "vitest";
-import {
-  mergeIntervals,
-  subtractIntervals,
-  parseInstant,
-  weekMinutes,
-  zonedToUtc,
-} from "./time.ts";
+import { mergeIntervals, parseInstant, weekMinutes } from "./time.ts";
 
 const tz = "America/New_York";
 
@@ -39,7 +33,7 @@ describe("weekMinutes and daylight saving", () => {
   });
 });
 
-describe("mergeIntervals and subtractIntervals", () => {
+describe("mergeIntervals", () => {
   const w = (s: number, e: number) => ({
     start: `2026-10-03T${String(s).padStart(2, "0")}:00:00.000Z`,
     end: `2026-10-03T${String(e).padStart(2, "0")}:00:00.000Z`,
@@ -48,67 +42,5 @@ describe("mergeIntervals and subtractIntervals", () => {
     expect(
       mergeIntervals([w(14, 16), w(10, 12), w(11, 13), w(13, 14)]),
     ).toEqual([w(10, 16)]);
-  });
-  test("subtract removes blocks from the range", () => {
-    expect(subtractIntervals(w(9, 18), [w(11, 12), w(14, 15)])).toEqual([
-      w(9, 11),
-      w(12, 14),
-      w(15, 18),
-    ]);
-  });
-  test("subtract clips blocks that extend past the range and ignores ones outside", () => {
-    expect(subtractIntervals(w(9, 18), [w(7, 10), w(17, 20), w(0, 1)])).toEqual(
-      [w(10, 17)],
-    );
-  });
-  test("subtract with no blocks returns the range; fully blocked returns nothing", () => {
-    expect(subtractIntervals(w(9, 18), [])).toEqual([w(9, 18)]);
-    expect(subtractIntervals(w(9, 18), [w(8, 19)])).toEqual([]);
-  });
-});
-
-describe("zonedToUtc", () => {
-  test("converts a wall-clock time in a zone to UTC", () => {
-    expect(zonedToUtc("2026-10-03T18:00", "America/Toronto")).toBe(
-      "2026-10-03T22:00:00.000Z",
-    ); // EDT, UTC-4
-    expect(zonedToUtc("2026-01-15T18:00", "America/Toronto")).toBe(
-      "2026-01-15T23:00:00.000Z",
-    ); // EST, UTC-5
-    expect(zonedToUtc("2026-10-03T18:00", "America/Vancouver")).toBe(
-      "2026-10-04T01:00:00.000Z",
-    );
-    expect(zonedToUtc("2026-10-03T12:00", "Asia/Kolkata")).toBe(
-      "2026-10-03T06:30:00.000Z",
-    ); // UTC+5:30
-    expect(zonedToUtc("2026-10-03T12:00", "UTC")).toBe(
-      "2026-10-03T12:00:00.000Z",
-    );
-  });
-  test("two people entering the same wall time in different zones get different instants", () => {
-    const toronto = zonedToUtc("2026-10-03T18:00", "America/Toronto");
-    const vancouver = zonedToUtc("2026-10-03T18:00", "America/Vancouver");
-    expect(Date.parse(vancouver) - Date.parse(toronto)).toBe(3 * 3600_000);
-  });
-  test("round-trips through weekMinutes", () => {
-    const iso = zonedToUtc("2026-10-03T18:00", "America/Toronto");
-    expect(weekMinutes(iso, "America/Toronto")).toBe(6 * 1440 + 18 * 60);
-  });
-  test("daylight saving edges resolve to a real instant", () => {
-    // 02:30 does not exist on 2026-03-08 in Toronto; 01:30 happens twice on 2026-11-01.
-    const gap = Date.parse(zonedToUtc("2026-03-08T02:30", "America/Toronto"));
-    expect([
-      Date.parse("2026-03-08T06:30:00Z"),
-      Date.parse("2026-03-08T07:30:00Z"),
-    ]).toContain(gap);
-    const twice = Date.parse(zonedToUtc("2026-11-01T01:30", "America/Toronto"));
-    expect([
-      Date.parse("2026-11-01T05:30:00Z"),
-      Date.parse("2026-11-01T06:30:00Z"),
-    ]).toContain(twice);
-  });
-  test("rejects anything that is not a local date-time", () => {
-    expect(() => zonedToUtc("2026-10-03T18:00:00Z", "UTC")).toThrow();
-    expect(() => zonedToUtc("tomorrow", "UTC")).toThrow();
   });
 });

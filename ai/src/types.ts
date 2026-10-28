@@ -1,5 +1,13 @@
+import {
+  AreaId,
+  BusyPart,
+  Part,
+  PreferenceId,
+  RegistrationInput,
+  areaById,
+  type Interval,
+} from "@circles/shared";
 import { z } from "zod";
-import { isValidTimeZone, parseInstant } from "./time.ts";
 
 export interface LatLng {
   lat: number;
@@ -24,98 +32,6 @@ export interface Candidate {
 export interface OpeningPeriod {
   openMin: number;
   closeMin: number;
-}
-
-const isInstant = (iso: string) => {
-  try {
-    parseInstant(iso);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const instant = z
-  .string()
-  .refine(isInstant, "must be a UTC ISO 8601 instant ending in Z");
-
-/** Half-open interval [start, end). Both are UTC ISO 8601 instants ending in "Z". See time.ts. */
-export const TimeWindowSchema = z
-  .object({ start: instant, end: instant })
-  .refine(
-    // Field checks may have failed already but this still runs, so guard it.
-    (w) =>
-      !isInstant(w.start) ||
-      !isInstant(w.end) ||
-      parseInstant(w.end) > parseInstant(w.start),
-    "end must be after start",
-  );
-
-export type TimeWindow = z.infer<typeof TimeWindowSchema>;
-
-/**
- * Where a person is. For now they pick a city; later this comes from their live position
- * (lat and lng from the device, timezone looked up from them).
- */
-export const LocationSchema = z.object({
-  name: z.string().min(1),
-  lat: z.number().min(-90).max(90),
-  lng: z.number().min(-180).max(180),
-  /** IANA zone. Opening hours and free time are read in this zone. */
-  timezone: z.string().refine(isValidTimeZone, "must be a valid IANA timezone"),
-});
-export type Location = z.infer<typeof LocationSchema>;
-
-export interface City {
-  id: string;
-  name: string;
-  /** IANA zone. Opening hours and "Saturday evening" are read in this zone. */
-  timezone: string;
-  center: LatLng;
-}
-
-export const CITIES: City[] = [
-  {
-    id: "toronto",
-    name: "Toronto",
-    timezone: "America/Toronto",
-    center: { lat: 43.6532, lng: -79.3832 },
-  },
-  {
-    id: "vancouver",
-    name: "Vancouver",
-    timezone: "America/Vancouver",
-    center: { lat: 49.2827, lng: -123.1207 },
-  },
-  {
-    id: "new-york",
-    name: "New York",
-    timezone: "America/New_York",
-    center: { lat: 40.7128, lng: -74.006 },
-  },
-  {
-    id: "san-francisco",
-    name: "San Francisco",
-    timezone: "America/Los_Angeles",
-    center: { lat: 37.7749, lng: -122.4194 },
-  },
-  {
-    id: "london",
-    name: "London",
-    timezone: "Europe/London",
-    center: { lat: 51.5074, lng: -0.1278 },
-  },
-];
-
-export const cityLocation = (city: City): Location => ({
-  name: city.name,
-  lat: city.center.lat,
-  lng: city.center.lng,
-  timezone: city.timezone,
-});
-
-export function findCity(id: string): City | undefined {
-  return CITIES.find((c) => c.id === id);
 }
 
 /** The things a plan can be held to. */
@@ -164,57 +80,51 @@ export const DAY_SPECS = [
 ] as const;
 export type DaySpec = (typeof DAY_SPECS)[number];
 
-/** Local start-hour ranges: morning 8-11, afternoon 12-16, evening 17-21. */
-export const PARTS_OF_DAY = ["morning", "afternoon", "evening"] as const;
-export type PartOfDay = (typeof PARTS_OF_DAY)[number];
-
-/** Narrows when the group meets. Empty or missing means any time everyone is free. */
-export const WhenSchema = z.object({
+export const TimeFilterSchema = z.object({
   days: z.array(z.enum(DAY_SPECS)).optional(),
-  partsOfDay: z.array(z.enum(PARTS_OF_DAY)).optional(),
+  partsOfDay: z.array(Part).optional(),
 });
-export type When = z.infer<typeof WhenSchema>;
+export type TimeFilter = z.infer<typeof TimeFilterSchema>;
 
-/** A group member's own constraints. Draft shape: the Circles data model is not final. */
-export const UserSchema = z.object({
+export const MemberSchema = z.object({
   id: z.string().min(1),
   name: z.string().trim().min(1),
-  /** Time blocks when the user is NOT available. Free time is derived from these. */
-  unavailable: z.array(TimeWindowSchema),
-  /** Where the person is. Defaults the search area when they make a plan. */
-  location: LocationSchema,
-  /** Maximum spend per person, in the group's currency units. */
-  budget: z.number().nonnegative(),
+  budgetCents: RegistrationInput.shape.budgetCents.unwrap(),
+  busy: z.array(BusyPart),
+  preferences: z.array(PreferenceId),
 });
-
-export type User = z.infer<typeof UserSchema>;
+export type Member = z.infer<typeof MemberSchema>;
 
 export const GroupContextSchema = z.object({
-  members: z.array(UserSchema).min(1),
-  preferences: z.array(z.string()).optional(),
+  members: z.array(MemberSchema).min(1),
   history: z.unknown().optional(),
 });
-export type GroupContext = z.infer<typeof GroupContextSchema>;
 
 /** Farthest search radius. Google Places biases a search to at most 50 km. */
 export const MAX_RADIUS_KM = 50;
-export const DEFAULT_RADIUS_KM = 15;
 
-export const PlanRequestSchema = z.object({
-  /** What to search for, as the group typed it. */
-  text: z.string().min(1),
-  group: GroupContextSchema,
-  /** Where to look. Its time zone is the one opening hours and mealtimes are read in. */
-  location: LocationSchema,
-  /** How far from the location to look, in km. */
-  radiusKm: z.number().positive().max(MAX_RADIUS_KM).default(DEFAULT_RADIUS_KM),
-  /** For each filter, whether it must be met or only preferred. */
-  filterModes: FilterModesSchema.prefault({}),
-  /** Limit to certain days or times of day. Missing means any time everyone is free. */
-  when: WhenSchema.optional(),
-  /** Overrides the group budget, which is otherwise the lowest member budget. */
-  budgetPerPerson: z.number().nonnegative().optional(),
-});
+export const PlanRequestSchema = z
+  .object({
+    text: z.string().min(1),
+    group: GroupContextSchema,
+    areaId: AreaId,
+    // Dates in the area's time zone, both included.
+    windowStart: z.iso.date(),
+    windowEnd: z.iso.date(),
+    radiusKm: z.number().positive().max(MAX_RADIUS_KM).optional(),
+    filterModes: FilterModesSchema.prefault({}),
+    timeFilter: TimeFilterSchema.optional(),
+    // Overrides the lowest member budget.
+    budgetCents: z.int().nonnegative().optional(),
+  })
+  .refine((r) => r.windowEnd >= r.windowStart, {
+    message: "windowEnd must not be before windowStart",
+    path: ["windowEnd"],
+  })
+  .transform((r) => ({
+    ...r,
+    radiusKm: r.radiusKm ?? areaById(r.areaId).radiusKm,
+  }));
 export type PlanRequest = z.infer<typeof PlanRequestSchema>;
 
 /**
@@ -230,7 +140,7 @@ export const EDIT_FIELDS = [
   "clearWhen",
   "budgetPerPerson",
   "radiusKm",
-  "cityId",
+  "areaId",
   "budgetMode",
   "openHoursMode",
   "partySizeMode",
@@ -242,23 +152,15 @@ export const PlanEditsSchema = z.object({
 });
 export type PlanEdits = z.infer<typeof PlanEditsSchema>;
 
-/**
- * A change to a plan, built by code from the model's edits. A missing field means "leave
- * it as it is".
- */
 export interface PlanPatch {
-  /** The full new search text, such as "hotpot" or "seafood buffet". */
   query?: string;
-  when?: { days?: DaySpec[]; partsOfDay?: PartOfDay[] };
-  /** True only if they ask for any day or any time. */
-  clearWhen?: boolean;
-  budgetPerPerson?: number;
+  timeFilter?: TimeFilter;
+  clearTimeFilter?: boolean;
+  budgetCents?: number;
   radiusKm?: number;
-  /** A city id. Unknown ids are ignored when applied. */
-  cityId?: string;
-  filterModes?: Partial<
-    Record<"budget" | "openHours" | "partySize" | "area", FilterMode>
-  >;
+  // Unknown ids are ignored when applied.
+  areaId?: string;
+  filterModes?: Partial<Record<FilterName, FilterMode>>;
 }
 
 /**
@@ -290,7 +192,7 @@ export interface PlanOption {
   rationale: string;
   constraintChecks: string[];
   /** Upcoming times when the group is free and the place is open. Empty if hours are unknown. */
-  availableTimes: TimeWindow[];
+  availableTimes: Interval[];
   /** How far the place is from the search location, in km. Closer places rank higher. */
   distanceKm: number;
   /** Filters set to "prefer" that this place does not meet. Empty means it meets them all. */

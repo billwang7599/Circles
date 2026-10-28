@@ -1,25 +1,19 @@
 // Dev runner: run the pipeline from the terminal on fakes (npm run dev).
-import { cityLocation, findCity, type PlanRequest } from "./types.ts";
+import { addDays, areaById, windowFor } from "@circles/shared";
+import type { PlanRequest } from "./types.ts";
 import { FakeRestaurantClient, createFakeLlmModel } from "./devFakes.ts";
 import { LlmClient } from "./llm.ts";
 import { planEvent } from "./plan.ts";
 
-const day = (offset: number, hour: number, hours: number) => {
-  const s = new Date();
-  s.setUTCDate(s.getUTCDate() + offset);
-  s.setUTCHours(hour, 0, 0, 0);
-  return {
-    start: s.toISOString(),
-    end: new Date(s.getTime() + hours * 3600_000).toISOString(),
-  };
-};
-
-const toronto = cityLocation(findCity("toronto")!);
+const area = areaById("uptown");
+const { windowStart, windowEnd } = windowFor("week", area.timezone, new Date());
 
 const request: PlanRequest = {
   text: process.argv.slice(2).join(" ") || "dinner",
-  location: toronto,
-  radiusKm: 15,
+  areaId: area.id,
+  windowStart,
+  windowEnd,
+  radiusKm: area.radiusKm,
   filterModes: {
     budget: "hard",
     openHours: "hard",
@@ -31,23 +25,17 @@ const request: PlanRequest = {
       {
         id: "1",
         name: "Alex",
-        location: toronto,
-        budget: 30,
-        unavailable: [day(1, 14, 8)],
+        budgetCents: 3000,
+        busy: [{ date: addDays(windowStart, 1), part: "evening" }],
+        preferences: ["ramen"],
       },
-      {
-        id: "2",
-        name: "Sam",
-        location: toronto,
-        budget: 40,
-        unavailable: [],
-      },
+      { id: "2", name: "Sam", budgetCents: 4000, busy: [], preferences: [] },
       {
         id: "3",
         name: "Jordan",
-        location: toronto,
-        budget: 60,
-        unavailable: [],
+        budgetCents: 6000,
+        busy: [],
+        preferences: [],
       },
     ],
   },

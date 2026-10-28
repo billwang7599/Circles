@@ -1,138 +1,121 @@
+import { RegistrationInput, areaById } from "@circles/shared";
 import { describe, expect, test } from "vitest";
 import {
-  DEFAULT_RADIUS_KM,
   GroupContextSchema,
+  MAX_RADIUS_KM,
+  MemberSchema,
   PlanRequestSchema,
-  UserSchema,
-  type User,
+  type Member,
 } from "./types.ts";
 
-const valid = {
+const valid: Member = {
   id: "u1",
   name: "Bill",
-  location: {
-    name: "Toronto",
-    lat: 43.65,
-    lng: -79.38,
-    timezone: "America/Toronto",
-  },
-  unavailable: [{ start: "2026-10-03T18:00:00Z", end: "2026-10-03T20:00:00Z" }],
-  budget: 25,
+  budgetCents: 2500,
+  busy: [{ date: "2026-10-03", part: "evening" }],
+  preferences: ["ramen"],
 };
 
-describe("UserSchema", () => {
-  test("accepts a valid user", () => {
-    expect(UserSchema.parse(valid)).toEqual(valid);
+describe("MemberSchema", () => {
+  test("accepts a valid member", () => {
+    expect(MemberSchema.parse(valid)).toEqual(valid);
   });
-  test("accepts no unavailable blocks", () => {
-    expect(UserSchema.safeParse({ ...valid, unavailable: [] }).success).toBe(
-      true,
-    );
+  test("accepts no busy parts and no preferences", () => {
+    expect(
+      MemberSchema.safeParse({ ...valid, busy: [], preferences: [] }).success,
+    ).toBe(true);
   });
-  test("rejects non-UTC, inverted, or empty time blocks", () => {
-    for (const block of [
-      { start: "2026-10-03T18:00:00-04:00", end: "2026-10-03T20:00:00Z" },
-      { start: "2026-10-03T20:00:00Z", end: "2026-10-03T18:00:00Z" },
-      { start: "2026-10-03T18:00:00Z", end: "2026-10-03T18:00:00Z" },
+  test("rejects a busy part with a bad date or an unknown part", () => {
+    for (const part of [
+      { date: "2026-10-03T18:00:00Z", part: "evening" },
+      { date: "2026-13-40", part: "evening" },
+      { date: "2026-10-03", part: "night" },
     ]) {
-      expect(
-        UserSchema.safeParse({ ...valid, unavailable: [block] }).success,
-      ).toBe(false);
-    }
-  });
-  test("rejects a blank name", () => {
-    expect(UserSchema.safeParse({ ...valid, name: "  " }).success).toBe(false);
-  });
-  test("rejects a negative budget", () => {
-    expect(UserSchema.safeParse({ ...valid, budget: -1 }).success).toBe(false);
-  });
-
-  test("rejects a missing or invalid location", () => {
-    const noLocation: Partial<typeof valid> = { ...valid };
-    delete noLocation.location;
-    expect(UserSchema.safeParse(noLocation).success).toBe(false);
-    for (const bad of [
-      { ...valid.location, lat: 91 },
-      { ...valid.location, lng: -181 },
-      { ...valid.location, timezone: "Nowhere/Land" },
-      { ...valid.location, name: "" },
-    ]) {
-      expect(UserSchema.safeParse({ ...valid, location: bad }).success).toBe(
+      expect(MemberSchema.safeParse({ ...valid, busy: [part] }).success).toBe(
         false,
       );
     }
   });
+  test("rejects a blank name", () => {
+    expect(MemberSchema.safeParse({ ...valid, name: "  " }).success).toBe(
+      false,
+    );
+  });
+  test("needs a budget in whole cents, within the app's limits", () => {
+    const { minValue, maxValue } = RegistrationInput.shape.budgetCents.unwrap();
+    for (const budgetCents of [undefined, 25.5, minValue! - 1, maxValue! + 1]) {
+      expect(MemberSchema.safeParse({ ...valid, budgetCents }).success).toBe(
+        false,
+      );
+    }
+  });
+  test("rejects an unknown preference", () => {
+    expect(
+      MemberSchema.safeParse({ ...valid, preferences: ["hotpot"] }).success,
+    ).toBe(false);
+  });
 });
-
-const toronto = {
-  name: "Toronto",
-  lat: 43.65,
-  lng: -79.38,
-  timezone: "America/Toronto",
-};
-const user = (over: Partial<User> = {}): User => ({
-  id: "u",
-  name: "U",
-  location: toronto,
-  budget: 25,
-  unavailable: [],
-  ...over,
-});
-const group = (members: User[]) => ({ members });
 
 describe("GroupContextSchema", () => {
   test("requires at least one member", () => {
-    expect(GroupContextSchema.safeParse(group([user()])).success).toBe(true);
-    expect(GroupContextSchema.safeParse(group([])).success).toBe(false);
-  });
-  test("members in the same time zone are fine, even at different places", () => {
-    const other = { ...toronto, name: "Oshawa", lat: 43.9, lng: -78.86 };
-    expect(
-      GroupContextSchema.safeParse(
-        group([user(), user({ id: "v", location: other })]),
-      ).success,
-    ).toBe(true);
-  });
-  test("members may be in different time zones", () => {
-    const vancouver = {
-      name: "Vancouver",
-      lat: 49.28,
-      lng: -123.12,
-      timezone: "America/Vancouver",
-    };
-    expect(
-      GroupContextSchema.safeParse(
-        group([user(), user({ id: "v", location: vancouver })]),
-      ).success,
-    ).toBe(true);
+    expect(GroupContextSchema.safeParse({ members: [valid] }).success).toBe(
+      true,
+    );
+    expect(GroupContextSchema.safeParse({ members: [] }).success).toBe(false);
   });
 });
 
 describe("PlanRequestSchema", () => {
-  const base = { text: "ramen", group: group([user()]), location: toronto };
+  const base = {
+    text: "ramen",
+    group: { members: [valid] },
+    areaId: "uptown",
+    windowStart: "2026-10-03",
+    windowEnd: "2026-10-09",
+  };
 
-  test("the radius defaults to 15 km", () => {
-    const parsed = PlanRequestSchema.parse(base);
-    expect(parsed.radiusKm).toBe(DEFAULT_RADIUS_KM);
-    expect(DEFAULT_RADIUS_KM).toBe(15);
+  test("the radius defaults to the area's own", () => {
+    expect(PlanRequestSchema.parse(base).radiusKm).toBe(
+      areaById("uptown").radiusKm,
+    );
+    expect(
+      PlanRequestSchema.parse({ ...base, areaId: "kitchener" }).radiusKm,
+    ).toBe(areaById("kitchener").radiusKm);
   });
-  test("accepts a chosen radius up to 50 km", () => {
-    expect(PlanRequestSchema.parse({ ...base, radiusKm: 50 }).radiusKm).toBe(
-      50,
-    );
-    expect(PlanRequestSchema.safeParse({ ...base, radiusKm: 51 }).success).toBe(
-      false,
-    );
+  test("accepts a chosen radius up to the maximum", () => {
+    expect(
+      PlanRequestSchema.parse({ ...base, radiusKm: MAX_RADIUS_KM }).radiusKm,
+    ).toBe(MAX_RADIUS_KM);
+    expect(
+      PlanRequestSchema.safeParse({ ...base, radiusKm: MAX_RADIUS_KM + 1 })
+        .success,
+    ).toBe(false);
     expect(PlanRequestSchema.safeParse({ ...base, radiusKm: 0 }).success).toBe(
       false,
     );
   });
-  test("needs a search location and some text", () => {
-    const noLocation: Partial<typeof base> = { ...base };
-    delete noLocation.location;
-    expect(PlanRequestSchema.safeParse(noLocation).success).toBe(false);
+  test("needs a known area and some text", () => {
+    for (const areaId of [undefined, "toronto"]) {
+      expect(PlanRequestSchema.safeParse({ ...base, areaId }).success).toBe(
+        false,
+      );
+    }
     expect(PlanRequestSchema.safeParse({ ...base, text: "" }).success).toBe(
       false,
     );
+  });
+  test("needs a window of dates that does not end before it starts", () => {
+    expect(
+      PlanRequestSchema.safeParse({ ...base, windowEnd: "2026-10-03" }).success,
+    ).toBe(true);
+    for (const over of [
+      { windowEnd: "2026-10-02" },
+      { windowStart: "2026-10-03T00:00:00Z" },
+      { windowEnd: undefined },
+    ]) {
+      expect(PlanRequestSchema.safeParse({ ...base, ...over }).success).toBe(
+        false,
+      );
+    }
   });
 });
