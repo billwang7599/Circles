@@ -2,3 +2,7 @@ CLAUDE.md
 node_modules
 .env
 dist
+.DS_Store
+mobile/.expo/
+mobile/ios/
+mobile/android/

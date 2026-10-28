@@ -8,3 +8,5 @@ export * from "./restaurants.ts";
 export * from "./plan.ts";
 export * from "./availability.ts";
 export * from "./chat.ts";
+export * from "./time.ts";
+export * from "./types.ts";

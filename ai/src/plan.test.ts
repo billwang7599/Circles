@@ -1,4 +1,4 @@
-import type { PlanRequest, User } from "@circles/shared";
+import type { PlanRequest, User } from "./types.ts";
 import { describe, expect, test } from "vitest";
 import {
   FakeRestaurantClient,

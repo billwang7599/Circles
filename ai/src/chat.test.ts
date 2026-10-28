@@ -1,4 +1,4 @@
-import { PlanRequestSchema, type PlanRequest } from "@circles/shared";
+import { PlanRequestSchema, type PlanRequest } from "./types.ts";
 import { describe, expect, test } from "vitest";
 import {
   applyPatch,

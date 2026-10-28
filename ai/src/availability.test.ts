@@ -1,4 +1,4 @@
-import type { Candidate } from "@circles/shared";
+import type { Candidate } from "./types.ts";
 import { describe, expect, test } from "vitest";
 import {
   availableTimes,

@@ -1,8 +1,5 @@
-import {
-  subtractIntervals,
-  type GroupContext,
-  type TimeWindow,
-} from "@circles/shared";
+import { subtractIntervals } from "./time.ts";
+import type { GroupContext, TimeWindow } from "./types.ts";
 
 /** Placeholder table: per-person budget to Google's 0-4 price level. Tune later. */
 const PRICE_LEVEL_CEILINGS = [0, 15, 30, 60]; // up to each value maps to level 0..3, above is 4

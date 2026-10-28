@@ -1,4 +1,4 @@
-import type { PlanJob, PlanRequest } from "@circles/shared";
+import type { PlanJob, PlanRequest } from "@circles/ai";
 import { useState } from "react";
 import type { ChatMessage, SavedPlan } from "./savedPlan";
 import { btn, field } from "./ui";

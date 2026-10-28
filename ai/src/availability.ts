@@ -1,8 +1,5 @@
+import { WEEK_MIN, mergeIntervals, parseInstant, weekMinutes } from "./time.ts";
 import {
-  WEEK_MIN,
-  mergeIntervals,
-  parseInstant,
-  weekMinutes,
   type AvailabilitySlot,
   type Candidate,
   type OpeningPeriod,
@@ -10,7 +7,7 @@ import {
   type TimeWindow,
   type When,
   WEEKDAYS,
-} from "@circles/shared";
+} from "./types.ts";
 
 export interface SlotOptions {
   /** How long the outing lasts. Default 2 hours. */

@@ -4,7 +4,7 @@ import {
   type Candidate,
   type LatLng,
   type OpeningPeriod,
-} from "@circles/shared";
+} from "./types.ts";
 import type { RankCandidate } from "./llm.ts";
 import type { RestaurantClient, RestaurantQuery } from "./restaurants.ts";
 

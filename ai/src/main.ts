@@ -1,5 +1,5 @@
 // Dev runner: run the pipeline from the terminal on fakes (npm run dev).
-import { cityLocation, findCity, type PlanRequest } from "@circles/shared";
+import { cityLocation, findCity, type PlanRequest } from "./types.ts";
 import { FakeRestaurantClient, createFakeLlmModel } from "./devFakes.ts";
 import { LlmClient } from "./llm.ts";
 import { planEvent } from "./plan.ts";

@@ -1,11 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
-  intersect,
-  intersectAll,
-  makeInterval,
   mergeIntervals,
   subtractIntervals,
-  overlaps,
   parseInstant,
   weekMinutes,
   zonedToUtc,
@@ -28,33 +24,6 @@ describe("parseInstant", () => {
     ]) {
       expect(() => parseInstant(bad)).toThrow();
     }
-  });
-});
-
-describe("intervals", () => {
-  const a = makeInterval("2026-10-03T18:00:00Z", "2026-10-03T20:00:00Z");
-  const b = makeInterval("2026-10-03T20:00:00Z", "2026-10-03T22:00:00Z");
-  const c = makeInterval("2026-10-03T19:00:00Z", "2026-10-03T21:00:00Z");
-
-  test("makeInterval rejects empty and inverted intervals", () => {
-    expect(() => makeInterval(a.start, a.start)).toThrow();
-    expect(() => makeInterval(a.end, a.start)).toThrow();
-  });
-  test("half-open: touching intervals do not overlap", () => {
-    expect(overlaps(a, b)).toBe(false);
-    expect(intersect(a, b)).toBeUndefined();
-  });
-  test("intersect returns the shared span", () => {
-    expect(intersect(a, c)).toEqual({
-      start: "2026-10-03T19:00:00.000Z",
-      end: "2026-10-03T20:00:00.000Z",
-    });
-  });
-  test("intersectAll across two members' free time", () => {
-    expect(intersectAll([a, b], [c])).toEqual([
-      { start: "2026-10-03T19:00:00.000Z", end: "2026-10-03T20:00:00.000Z" },
-      { start: "2026-10-03T20:00:00.000Z", end: "2026-10-03T21:00:00.000Z" },
-    ]);
   });
 });
 

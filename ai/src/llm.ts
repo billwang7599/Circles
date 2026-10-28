@@ -3,7 +3,7 @@ import {
   type Candidate,
   type FilterName,
   type PlanEdits,
-} from "@circles/shared";
+} from "./types.ts";
 import {
   generateText,
   Output,

@@ -1,4 +1,4 @@
-import { CITIES, cityLocation, type User } from "@circles/shared";
+import { CITIES, cityLocation, type User } from "@circles/ai";
 
 const HOUR = 3600_000;
 const toronto = cityLocation(CITIES.find((c) => c.id === "toronto")!);

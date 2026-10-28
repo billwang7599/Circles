@@ -3,7 +3,7 @@ import type {
   FilterModes,
   SearchFields,
   TimeWindow,
-} from "@circles/shared";
+} from "./types.ts";
 import { describe, expect, test } from "vitest";
 import { toSlot } from "./availability.ts";
 import {

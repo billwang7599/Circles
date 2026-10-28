@@ -8,7 +8,7 @@ import {
   type PlanJob,
   type PlanRequest,
   type User,
-} from "@circles/shared";
+} from "@circles/ai";
 import { useEffect, useState } from "react";
 import { PlanOutcome } from "./PlanOutcome";
 import type { SavedOutcome, SavedPlan } from "./savedPlan";

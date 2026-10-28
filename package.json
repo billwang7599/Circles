@@ -1,5 +1,29 @@
 {
   "name": "circles",
   "private": true,
-  "workspaces": ["shared", "ai", "web", "api"]
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "ai",
+    "api",
+    "mobile",
+    "web"
+  ],
+  "scripts": {
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm test --workspaces --if-present",
+    "build": "npm run build -w mobile -w web"
+  },
+  "devDependencies": {
+    "eslint": "^10.13.0",
+    "eslint-config-expo": "^58.0.4",
+    "prettier": "^3.9.10",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "~4.1.12"
+  },
+  "overrides": {
+    "vite": "^7"
+  }
 }

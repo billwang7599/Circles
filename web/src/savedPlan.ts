@@ -1,9 +1,4 @@
-import type {
-  PlanJob,
-  PlanRequest,
-  PlanResponse,
-  TimeWindow,
-} from "@circles/shared";
+import type { PlanJob, PlanRequest, PlanResult, TimeWindow } from "@circles/ai";
 
 export interface SavedOption {
   candidateId: string;
@@ -54,7 +49,7 @@ export interface SavedPlan {
 }
 
 /** Keep only what the list needs, so many plans fit in localStorage. */
-export function toOutcome(res: PlanResponse): SavedOutcome {
+export function toOutcome(res: PlanResult): SavedOutcome {
   if (res.status === "no_matches")
     return { status: "no_matches", message: res.message };
   return {

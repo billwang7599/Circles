@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { GroupContextSchema, type User } from "@circles/shared";
+import { GroupContextSchema, type User } from "./types.ts";
 import { deriveConstraints, priceLevelForBudget } from "./constraints.ts";
 
 const here = {

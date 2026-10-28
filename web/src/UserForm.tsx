@@ -4,7 +4,7 @@ import {
   cityLocation,
   zonedToUtc,
   type User,
-} from "@circles/shared";
+} from "@circles/ai";
 import { useState } from "react";
 import { btn, field } from "./ui";
 

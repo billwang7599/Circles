@@ -7,7 +7,7 @@ import {
   type PlanRequest,
   type PlanStage,
   type SearchFields,
-} from "@circles/shared";
+} from "./types.ts";
 import { z } from "zod";
 import {
   availableTimes,
@@ -54,6 +54,18 @@ export type PlanResult =
       notice?: string;
     }
   | { status: "no_matches"; reason: NoMatchReason; message: string };
+
+export type PlanJobStatus = "pending" | "running" | "done" | "failed";
+
+export interface PlanJob {
+  id: string;
+  status: PlanJobStatus;
+  stage?: PlanStage;
+  result?: PlanResult;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export { PlannerError } from "./validated.ts";
 

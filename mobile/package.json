@@ -1,27 +1,37 @@
 {
-  "name": "circles-app",
+  "name": "@circles/mobile",
   "private": true,
-  "type": "module",
-  "workspaces": [
-    "shared",
-    "api",
-    "app"
-  ],
+  "version": "0.0.0",
+  "main": "expo-router/entry",
   "scripts": {
-    "lint": "npm run lint --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm test --workspaces --if-present",
-    "build": "npm run build -w app"
+    "dev": "expo start",
+    "ios": "expo run:ios",
+    "build": "expo export -p web",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@circles/shared": "*",
+    "@expo-google-fonts/figtree": "^0.4.1",
+    "@expo/vector-icons": "^15.0.2",
+    "@tanstack/react-query": "^5.104.5",
+    "expo": "~58.0.19",
+    "expo-constants": "~58.0.13",
+    "expo-font": "~58.0.10",
+    "expo-linking": "~58.0.14",
+    "expo-router": "~58.0.26",
+    "expo-secure-store": "~58.0.2",
+    "expo-splash-screen": "~58.0.11",
+    "expo-system-ui": "~58.0.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-native": "0.88.0",
+    "react-native-safe-area-context": "~5.10.1",
+    "react-native-screens": "~4.30.0",
+    "react-native-web": "~0.21.4"
   },
   "devDependencies": {
-    "eslint": "^10.13.0",
-    "eslint-config-expo": "^58.0.4",
-    "prettier": "^3.9.10",
-    "typescript": "~6.0.3",
-    "typescript-eslint": "^8.72.0",
-    "vitest": "~4.1.12"
-  },
-  "overrides": {
-    "vite": "^7"
+    "@types/react": "~19.3.0",
+    "typescript": "~6.0.3"
   }
 }

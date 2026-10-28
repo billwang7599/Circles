@@ -14,7 +14,7 @@ import {
   type PlanPatch,
   type PlanRequest,
   type When,
-} from "@circles/shared";
+} from "./types.ts";
 import type { LlmClient } from "./llm.ts";
 import { validated } from "./validated.ts";
 
