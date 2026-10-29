@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { Pool } from "pg";
 import { z } from "zod";
 import { createApp } from "./app.ts";
+import { devVerifier, verifierFor } from "./auth.ts";
 import { pgDb } from "./db.ts";
 import { log } from "./log.ts";
 import { migrate } from "./migrate.ts";
@@ -23,8 +24,13 @@ const env = z
     BEDROCK_MODEL_ID: z.string().default(""),
     GOOGLE_PLACES_API_KEY: z.string().default(""),
     GOOGLE_PLACES_MAX_REQUESTS: z.coerce.number().int().positive().default(100),
+    COGNITO_USER_POOL_ID: z.string().default(""),
+    COGNITO_CLIENT_ID: z.string().default(""),
+    COGNITO_DOMAIN: z.string().default(""),
   })
   .parse(process.env);
+
+const verifier = verifierFor(env);
 
 const ranker = env.BEDROCK_MODEL_ID
   ? bedrockRanker(env.AWS_REGION, env.BEDROCK_MODEL_ID)
@@ -39,6 +45,7 @@ await migrate(pgDb(client));
 client.release();
 
 const app = createApp(pgDb(pool), {
+  verifier,
   cors: env.NODE_ENV !== "production",
   ranker,
   places,
@@ -49,5 +56,6 @@ serve({ fetch: app.fetch, port: env.PORT }, () =>
     port: env.PORT,
     ranker: ranker.model,
     places: env.GOOGLE_PLACES_API_KEY ? "google" : "fake",
+    auth: verifier === devVerifier ? "dev" : "cognito",
   }),
 );

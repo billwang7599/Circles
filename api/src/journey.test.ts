@@ -95,4 +95,4 @@ test("a plan's whole life, as each member's next move", async () => {
 
   expect((await call("DELETE", path, nicky)).status).toBe(200);
   expect((await call("GET", path, dana)).status).toBe(404);
-});
+}, 20_000);

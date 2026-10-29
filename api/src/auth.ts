@@ -1,46 +1,110 @@
-import { createHash, randomBytes, randomInt } from "node:crypto";
-import { AVATAR_COLORS, type MemberSummary } from "@circles/shared";
-import type { Context } from "hono";
+import { randomInt } from "node:crypto";
+import { AVATAR_COLORS, Email, type MemberSummary } from "@circles/shared";
+import { CognitoJwtVerifier } from "aws-jwt-verify";
+import { FetchError, JwtBaseError } from "aws-jwt-verify/error";
+import type { Context, MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import type { Db } from "./db.ts";
 
 export type AppEnv = { Variables: { accountId?: string } };
 
-const hash = (token: string) =>
-  createHash("sha256").update(token).digest("hex");
+// sub resolves undefined for a token it refuses and rejects when it can't tell.
+export type Verifier = {
+  sub(token: string): Promise<string | undefined>;
+  email(token: string): Promise<string>;
+};
 
-async function bearer(c: Context<AppEnv>, db: Db) {
-  const header = c.req.header("authorization");
-  if (!header?.startsWith("Bearer ")) return undefined;
-  const [row] = await db.query<{ id: string }>(
-    "select id from accounts where token_hash = $1",
-    [hash(header.slice(7))],
-  );
-  if (!row) throw new HTTPException(401, { message: "Unknown token" });
-  c.set("accountId", row.id);
-  return row.id;
+export const devVerifier: Verifier = {
+  async sub(token) {
+    const email = token.match(/^dev:(.+)$/)?.[1];
+    return email && Email.safeParse(email).success ? token : undefined;
+  },
+  async email(token) {
+    return token.slice("dev:".length);
+  },
+};
+
+export function verifierFor({
+  NODE_ENV,
+  COGNITO_USER_POOL_ID,
+  COGNITO_CLIENT_ID,
+  COGNITO_DOMAIN,
+}: Record<
+  "NODE_ENV" | "COGNITO_USER_POOL_ID" | "COGNITO_CLIENT_ID" | "COGNITO_DOMAIN",
+  string
+>): Verifier {
+  const settings = { COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, COGNITO_DOMAIN };
+  const missing = Object.entries(settings)
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+  if (
+    missing.length === Object.keys(settings).length &&
+    NODE_ENV !== "production"
+  )
+    return devVerifier;
+  if (missing.length > 0)
+    throw new Error(`Set ${missing.join(", ")} to sign people in`);
+
+  const jwt = CognitoJwtVerifier.create({
+    userPoolId: COGNITO_USER_POOL_ID,
+    clientId: COGNITO_CLIENT_ID,
+    tokenUse: "access",
+  });
+  return {
+    async sub(token) {
+      try {
+        return (await jwt.verify(token)).sub;
+      } catch (err) {
+        if (err instanceof JwtBaseError && !(err instanceof FetchError))
+          return undefined;
+        throw err;
+      }
+    },
+    async email(token) {
+      const res = await fetch(`https://${COGNITO_DOMAIN}/oauth2/userInfo`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`userInfo answered ${res.status}`);
+      return z.object({ email: Email }).parse(await res.json()).email;
+    },
+  };
 }
 
-export async function account(c: Context<AppEnv>, db: Db): Promise<string> {
-  const id = await bearer(c, db);
+export function authenticate(
+  db: Db,
+  verifier: Verifier,
+): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const token = c.req.header("authorization")?.match(/^Bearer (.+)$/)?.[1];
+    if (!token) throw new HTTPException(401, { message: "Not signed in" });
+    const sub = await verifier.sub(token);
+    if (!sub) throw new HTTPException(401, { message: "Invalid token" });
+    let [row] = await db.query<{ id: string }>(
+      "select id from accounts where sub = $1",
+      [sub],
+    );
+    if (!row) {
+      // A concurrent first request may insert the same sub; both get its id.
+      [row] = await db.query<{ id: string }>(
+        `insert into accounts (sub, email, color) values ($1, $2, $3)
+         on conflict (sub) do update set email = excluded.email returning id`,
+        [
+          sub,
+          await verifier.email(token),
+          AVATAR_COLORS[randomInt(AVATAR_COLORS.length)],
+        ],
+      );
+    }
+    c.set("accountId", row.id);
+    await next();
+  };
+}
+
+export function account(c: Context<AppEnv>): string {
+  const id = c.get("accountId");
   if (!id) throw new HTTPException(401, { message: "Not signed in" });
   return id;
-}
-
-export async function accountOrNew(
-  c: Context<AppEnv>,
-  db: Db,
-): Promise<{ accountId: string; token?: string }> {
-  const existing = await bearer(c, db);
-  if (existing) return { accountId: existing };
-  const token = randomBytes(32).toString("base64url");
-  const [row] = await db.query<{ id: string }>(
-    "insert into accounts (token_hash, color) values ($1, $2) returning id",
-    [hash(token), AVATAR_COLORS[randomInt(AVATAR_COLORS.length)]],
-  );
-  c.set("accountId", row.id);
-  return { accountId: row.id, token };
 }
 
 export async function memberOf(
@@ -48,7 +112,7 @@ export async function memberOf(
   db: Db,
   circleId: string,
 ): Promise<MemberSummary> {
-  const accountId = await account(c, db);
+  const accountId = account(c);
   const [member] = z.uuid().safeParse(circleId).success
     ? await db.query<MemberSummary>(
         "select id, name from members where account_id = $1 and circle_id = $2",

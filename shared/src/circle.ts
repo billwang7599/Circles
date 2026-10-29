@@ -13,6 +13,8 @@ const JoinCode = z
   .toUpperCase()
   .regex(/^[2-9A-HJ-NP-Z]{6}$/, "Enter the 6-character code");
 
+export const Email = z.email("Enter an email address");
+
 export const AVATAR_COLORS = [
   "violet",
   "blue",
@@ -32,7 +34,6 @@ export type CircleSummary = { id: string; name: string; joinCode: string };
 export type MemberSummary = { id: string; name: string };
 
 export type MembershipResponse = {
-  token?: string;
   circle: CircleSummary;
   member: MemberSummary;
 };
@@ -44,6 +45,7 @@ export type NextPlan = {
 };
 
 export type Me = {
+  email: string;
   circles: {
     id: string;
     name: string;

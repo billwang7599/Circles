@@ -14,7 +14,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Constants from "expo-constants";
 import { NativeModules, Platform } from "react-native";
-import { clearToken, getToken, setToken } from "./session";
+import { accessToken, forgetSession } from "./session";
 
 const scriptUrl: string | undefined =
   NativeModules.SourceCode?.getConstants?.().scriptURL;
@@ -46,12 +46,12 @@ async function request<T>(
   body?: object,
   method: "GET" | "POST" | "PUT" | "DELETE" = body ? "POST" : "GET",
 ): Promise<T> {
-  const token = await getToken();
   const headers: Record<string, string> = {};
   if (body) headers["Content-Type"] = "application/json";
-  if (token) headers.Authorization = `Bearer ${token}`;
   let res: Response;
   try {
+    const token = await accessToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
     res = await fetch(baseUrl + path, {
       method,
       headers,
@@ -60,7 +60,7 @@ async function request<T>(
   } catch {
     throw new Error("Can't reach the server");
   }
-  if (res.status === 401) await clearToken();
+  if (res.status === 401) forgetSession();
   if (!res.headers.get("content-type")?.includes("application/json"))
     throw new Error("Can't reach the server");
   const json: unknown = await res.json();
@@ -88,17 +88,7 @@ const polling = {
 export function useMe() {
   return useQuery({
     queryKey: keys.me,
-    queryFn: async (): Promise<Me> => {
-      if (!(await getToken())) return { circles: [] };
-      try {
-        return await request<Me>("/api/me");
-      } catch (error) {
-        // The account is gone; request() already dropped the token.
-        if (error instanceof ApiError && error.status === 401)
-          return { circles: [] };
-        throw error;
-      }
-    },
+    queryFn: () => request<Me>("/api/me"),
     ...polling,
   });
 }
@@ -115,11 +105,7 @@ function useMembership<Body extends object>(path: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: Body) => request<MembershipResponse>(path, body),
-    // A stale token is dropped by request(); the retry creates a fresh account.
-    retry: (count, error) =>
-      error instanceof ApiError && error.status === 401 && count < 1,
-    onSuccess: async ({ token }) => {
-      if (token) await setToken(token);
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: keys.me });
     },
   });

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
-import type { AppEnv } from "./auth.ts";
+import { authenticate, type AppEnv, type Verifier } from "./auth.ts";
 import { circles } from "./circles.ts";
 import type { Db } from "./db.ts";
 import { log } from "./log.ts";
@@ -14,7 +14,12 @@ import { votes } from "./votes.ts";
 
 export function createApp(
   db: Db,
-  deps: { cors?: boolean; ranker?: Ranker; places?: PlacesClient } = {},
+  deps: {
+    verifier: Verifier;
+    cors?: boolean;
+    ranker?: Ranker;
+    places?: PlacesClient;
+  },
 ) {
   const app = new Hono<AppEnv>();
 
@@ -43,6 +48,8 @@ export function createApp(
     await db.query("select 1");
     return c.json({ ok: true });
   });
+  // After /api/health, so the health check needs no token.
+  app.use("/api/*", authenticate(db, deps.verifier));
   app.route("/api", circles(db));
   app.route("/api", plans(db));
   app.route(
