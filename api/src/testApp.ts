@@ -6,6 +6,7 @@ import type {
 } from "@circles/shared";
 import { expect } from "vitest";
 import { createApp } from "./app.ts";
+import { devVerifier } from "./auth.ts";
 import { testDb } from "./testDb.ts";
 
 export const attending = (
@@ -18,9 +19,14 @@ export const attending = (
   preferences: [preference],
 });
 
-export async function testApp(deps: Parameters<typeof createApp>[1] = {}) {
+let accounts = 0;
+export const newToken = () => `dev:person${++accounts}@example.com`;
+
+export async function testApp(
+  deps: Partial<Parameters<typeof createApp>[1]> = {},
+) {
   const db = await testDb();
-  const app = createApp(db, deps);
+  const app = createApp(db, { verifier: devVerifier, ...deps });
 
   function call(method: string, path: string, token?: string, data?: unknown) {
     return app.request(path, {
@@ -33,10 +39,10 @@ export async function testApp(deps: Parameters<typeof createApp>[1] = {}) {
     });
   }
 
-  async function membership(path: string, data: unknown) {
-    const res = await call("POST", path, undefined, data);
+  async function membership(path: string, data: unknown, token = newToken()) {
+    const res = await call("POST", path, token, data);
     expect(res.status).toBe(201);
-    return (await res.json()) as MembershipResponse & { token: string };
+    return { ...((await res.json()) as MembershipResponse), token };
   }
 
   const createCircle = (name: string, memberName: string) =>

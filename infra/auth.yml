@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Circles sign-in with an emailed code (Cognito user pool, managed login, app client)
+
+Parameters:
+  SenderArn:
+    Type: String
+    Description: Verified SES identity that sends the codes
+    AllowedPattern: "arn:aws:ses:[a-z0-9-]+:[0-9]{12}:identity/.+"
+  SenderFrom:
+    Type: String
+    Description: From header of the code emails, e.g. Circles <contact@example.com>
+  DomainPrefix:
+    Type: String
+    Default: circles
+    Description: Managed login is served at https://<prefix>.auth.<region>.amazoncognito.com
+
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: circles
+      UserPoolTier: ESSENTIALS
+      DeletionProtection: ACTIVE
+      UsernameAttributes: [email]
+      UsernameConfiguration:
+        CaseSensitive: false
+      AutoVerifiedAttributes: [email]
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      # Cognito rejects a sign-in policy without PASSWORD, and managed login sign-up always asks for one.
+      Policies:
+        SignInPolicy:
+          AllowedFirstAuthFactors: [EMAIL_OTP, PASSWORD]
+      # No self-service recovery hides "Forgot password" on managed login; the email code is the way back in.
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: admin_only
+            Priority: 1
+      # Email codes require SES (DEVELOPER); Cognito creates its SES service-linked role on first deploy.
+      EmailConfiguration:
+        EmailSendingAccount: DEVELOPER
+        SourceArn: !Ref SenderArn
+        From: !Ref SenderFrom
+
+  Domain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Ref DomainPrefix
+      ManagedLoginVersion: 2
+
+  AppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: circles-app
+      GenerateSecret: false
+      ExplicitAuthFlows: [ALLOW_USER_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      SupportedIdentityProviders: [COGNITO]
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email]
+      # The app's dev build, Expo web, and Expo Go on the simulator (expo start --localhost).
+      CallbackURLs:
+        - circles://sign-in
+        - http://localhost:8081/sign-in
+        - exp://127.0.0.1:8081/--/sign-in
+      LogoutURLs:
+        - circles://sign-in
+        - http://localhost:8081/sign-in
+        - exp://127.0.0.1:8081/--/sign-in
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      RefreshTokenValidity: 365
+      TokenValidityUnits:
+        RefreshToken: days
+
+  Branding:
+    Type: AWS::Cognito::ManagedLoginBranding
+    DependsOn: Domain
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientId: !Ref AppClient
+      UseCognitoProvidedValues: true
+
+Outputs:
+  UserPoolId:
+    Value: !Ref UserPool
+  ClientId:
+    Value: !Ref AppClient
+  Domain:
+    Value: !Sub ${DomainPrefix}.auth.${AWS::Region}.amazoncognito.com

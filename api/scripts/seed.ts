@@ -10,6 +10,7 @@ import type {
 } from "@circles/shared";
 import { Pool } from "pg";
 import { createApp } from "../src/app.ts";
+import { devVerifier } from "../src/auth.ts";
 import { pgDb } from "../src/db.ts";
 import { migrate } from "../src/migrate.ts";
 
@@ -68,6 +69,12 @@ const circles: Circle[] = [
 const envFile = fileURLToPath(new URL("../.env", import.meta.url));
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
+const yourEmail = process.argv[2];
+if (yourEmail !== undefined && !/^[^@\s]+@[^@\s]+$/.test(yourEmail)) {
+  process.stderr.write("Usage: npm run seed -w api -- [your@email]\n");
+  process.exit(1);
+}
+
 const url =
   process.env.DATABASE_URL ??
   "postgres://circles:circles@localhost:5432/circles";
@@ -83,7 +90,7 @@ const client = await pool.connect();
 await migrate(pgDb(client));
 client.release();
 const db = pgDb(pool);
-const app = createApp(db);
+const app = createApp(db, { verifier: devVerifier });
 
 async function request<T>(
   method: string,
@@ -115,44 +122,35 @@ const seeded = await db.query<{ name: string }>(
   "select name from circles where join_code = any($1)",
   [circles.map((c) => c.code)],
 );
-if (seeded.length > 0) {
+if (seeded.length > 0)
   print(`Already seeded: ${seeded.map((c) => c.name).join(", ")}`);
-  await pool.end();
-  process.exit(0);
-}
 
-function tokenOf(membership: MembershipResponse) {
-  if (!membership.token) throw new Error("No token returned");
-  return membership.token;
-}
+const emailOf = (name: string) => `${name.toLowerCase()}@example.com`;
+const tokenOf = (name: string) => `dev:${emailOf(name)}`;
 
-for (const circle of circles) {
+for (const circle of seeded.length > 0 ? [] : circles) {
   const [owner, ...others] = circle.members;
   const created = await request<MembershipResponse>(
     "POST",
     "/api/circles",
-    undefined,
+    tokenOf(owner.name),
     { name: circle.name, memberName: owner.name },
   );
   await db.query("update circles set join_code = $1 where id = $2", [
     circle.code,
     created.circle.id,
   ]);
-  const tokens = new Map([[owner.name, tokenOf(created)]]);
   for (const member of others) {
-    const joined = await request<MembershipResponse>(
-      "POST",
-      "/api/circles/join",
-      undefined,
-      { code: circle.code, name: member.name },
-    );
-    tokens.set(member.name, tokenOf(joined));
+    await request("POST", "/api/circles/join", tokenOf(member.name), {
+      code: circle.code,
+      name: member.name,
+    });
   }
 
   const plan = await request<PlanView>(
     "POST",
     `/api/circles/${created.circle.id}/plans`,
-    tokens.get(owner.name),
+    tokenOf(owner.name),
     { ...circle.plan, when: "week" },
   );
   for (const member of circle.members) {
@@ -169,13 +167,33 @@ for (const circle of circles) {
     await request(
       "PUT",
       `/api/circles/${created.circle.id}/plans/${plan.plan.id}/registration`,
-      tokens.get(member.name),
+      tokenOf(member.name),
       input,
     );
   }
 
   print(`${circle.name}  ${circle.code}`);
-  for (const [name, token] of tokens) print(`  ${name.padEnd(8)}${token}`);
+  for (const { name } of circle.members)
+    print(`  ${name.padEnd(8)}${emailOf(name)}`);
+}
+
+if (yourEmail) {
+  for (const circle of circles) {
+    const res = await app.request("/api/circles/join", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer dev:${yourEmail}`,
+      },
+      body: JSON.stringify({
+        code: circle.code,
+        name: yourEmail.split("@")[0],
+      }),
+    });
+    if (!res.ok && res.status !== 409)
+      throw new Error(`join ${circle.code}: ${res.status}`);
+  }
+  print(`${yourEmail} is in ${circles.map((c) => c.name).join(" and ")}`);
 }
 
 await pool.end();

@@ -1,10 +1,13 @@
 import { StyleSheet, View } from "react-native";
+import { useMe } from "../api";
 import {
   APPEARANCES,
   setAppearance,
   useAppearance,
   type AppearanceChoice,
 } from "../appearance";
+import { signOut } from "../session";
+import { Button } from "../ui/Button";
 import { Chip } from "../ui/Chip";
 import { Screen } from "../ui/Screen";
 import { Text } from "../ui/Text";
@@ -32,6 +35,7 @@ const themeLabels: Record<ThemeId, string> = {
 export default function Settings() {
   const appearance = useAppearance();
   const theme = useThemeChoice();
+  const email = useMe().data?.email;
   return (
     <Screen>
       <View style={styles.fields}>
@@ -60,6 +64,11 @@ export default function Settings() {
               />
             ))}
           </View>
+        </View>
+        <View style={styles.field}>
+          <Text variant="label">Account</Text>
+          {email ? <Text color="textMuted">Signed in as {email}</Text> : null}
+          <Button title="Sign out" variant="secondary" onPress={signOut} />
         </View>
       </View>
     </Screen>

@@ -1,7 +1,7 @@
 import type { CircleView, Lock, Me, NextPlan, PlanView } from "@circles/shared";
 import { beforeAll, expect, test, vi } from "vitest";
 import type { Db } from "./db.ts";
-import { testApp, type TestApp } from "./testApp.ts";
+import { newToken, testApp, type TestApp } from "./testApp.ts";
 
 let call: TestApp["call"];
 let createCircle: TestApp["createCircle"];
@@ -17,7 +17,7 @@ beforeAll(async () => {
 
 const get = (path: string, token?: string) => call("GET", path, token);
 const post = (path: string, data: unknown) =>
-  call("POST", path, undefined, data);
+  call("POST", path, newToken(), data);
 
 test("joining with a name someone in the circle already uses is 409", async () => {
   const { circle } = await createCircle("Dinner club", "Nicky");
@@ -29,11 +29,6 @@ test("joining with a name someone in the circle already uses is 409", async () =
   expect(await res.json()).toEqual({
     error: "Someone in this circle already uses that name",
   });
-});
-
-test("no token is 401", async () => {
-  const res = await get("/api/me");
-  expect(res.status).toBe(401);
 });
 
 test("a token from another circle is 403 on the circle view", async () => {

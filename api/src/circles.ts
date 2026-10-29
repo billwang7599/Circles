@@ -14,7 +14,7 @@ import {
 } from "@circles/shared";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { account, accountOrNew, memberOf, type AppEnv } from "./auth.ts";
+import { account, memberOf, type AppEnv } from "./auth.ts";
 import { body } from "./body.ts";
 import type { Db } from "./db.ts";
 import { planPhase, type PhaseRow } from "./plan/phase.ts";
@@ -115,10 +115,9 @@ export function circles(db: Db) {
 
   app.post("/circles", async (c) => {
     const { name, memberName } = await body(c, CreateCircle);
-    const { accountId, token } = await accountOrNew(c, db);
     const circle = await createCircle(db, name);
-    const member = await addMember(db, accountId, circle.id, memberName);
-    return c.json({ token, circle, member } satisfies MembershipResponse, 201);
+    const member = await addMember(db, account(c), circle.id, memberName);
+    return c.json({ circle, member } satisfies MembershipResponse, 201);
   });
 
   app.post("/circles/join", async (c) => {
@@ -129,13 +128,16 @@ export function circles(db: Db) {
     );
     if (!circle)
       throw new HTTPException(404, { message: "No circle has that code" });
-    const { accountId, token } = await accountOrNew(c, db);
-    const member = await addMember(db, accountId, circle.id, name);
-    return c.json({ token, circle, member } satisfies MembershipResponse, 201);
+    const member = await addMember(db, account(c), circle.id, name);
+    return c.json({ circle, member } satisfies MembershipResponse, 201);
   });
 
   app.get("/me", async (c) => {
-    const accountId = await account(c, db);
+    const accountId = account(c);
+    const [{ email }] = await db.query<{ email: string }>(
+      "select email from accounts where id = $1",
+      [accountId],
+    );
     const circles = await db.query<Omit<Me["circles"][number], "next">>(
       `select c.id, c.name, m.id as "memberId", m.name as "memberName"
        from members m join circles c on c.id = m.circle_id
@@ -157,6 +159,7 @@ export function circles(db: Db) {
       )
     ).map((p) => ({ ...p, phase: planPhase(p, now) }));
     return c.json({
+      email,
       circles: circles.map((circle) => ({
         ...circle,
         next: nextPlan(plans.filter((p) => p.circleId === circle.id)),

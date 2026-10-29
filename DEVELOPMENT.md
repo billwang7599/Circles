@@ -6,8 +6,8 @@
 - `ai/` the planner harness (search, availability, ranking, LLM calls). Not wired into `api/` yet.
 - `web/` planner test bench: a Vite page plus its own server on :3002 that runs `ai/`
 
-Create a circle, join by code (no passwords), start a plan, answer with a budget, busy times and preferences (the budget
-stays private), get options, vote, and lock one in.
+Sign in with a code sent to your email, create a circle, join one by code, start a plan, answer with a budget, busy
+times and preferences (the budget stays private), get options, vote, and lock one in.
 
 **Setup**
 
@@ -15,7 +15,7 @@ stays private), get options, vote, and lock one in.
 git clone https://github.com/billwang7599/Circles && cd Circles
 npm ci && docker compose up -d && cp api/.env.example api/.env
 npm run dev -w api     # http://localhost:3001/api/health
-npm run seed -w api    # optional demo data: Roommates (code FSQWWV) and SE Friends (YQLJVS)
+npm run seed -w api -- you@example.com  # optional demo circles Roommates and SE Friends, with you in both
 npm run ios -w mobile  # first time only: builds the iOS dev app, needs Xcode
 npm run dev -w mobile  # then press i for the simulator or w for the browser
 ```
@@ -24,8 +24,56 @@ Needs Node 24, Docker Desktop running (it only hosts Postgres; the API applies m
 simulator. With `api/.env` as copied, the API runs on a fake planner model and fake places and logs which it chose at
 startup. The compose project is `circles`, so Postgres starts on a fresh volume (the old `mobile_` one isn't reused).
 
-Options need two people in. Alone, press `w` for the browser build, which is a separate account, and join your circle
-with its code there.
+Options need two people in. Alone, press `w` for the browser build, sign in there with another email, and join your
+circle with its code.
+
+**Sign-in**
+The app signs people in through Amazon Cognito's managed login, which emails a one-time code (Authorization Code with
+PKCE), and sends the access token to the API as a Bearer token. The API verifies it with `aws-jwt-verify` and keys
+`accounts` on the token's `sub`; on someone's first request it reads their email from Cognito's `userInfo` endpoint.
+
+Locally you don't need Cognito: with the `COGNITO_*` values empty (as in `api/.env.example`) the API accepts
+`dev:<email>` tokens, the same way it falls back to the fake planner, and the app, without `EXPO_PUBLIC_COGNITO_*`
+values, shows a dev sign-in that asks only for an email. Any address works and each one is its own account. Tests use
+the same dev tokens. In production the API refuses to start without the `COGNITO_*` values.
+
+To sign in for real, fill these from the `circles-auth` stack outputs (below) in `api/.env`:
+
+```
+COGNITO_USER_POOL_ID=ca-central-1_...
+COGNITO_CLIENT_ID=...
+COGNITO_DOMAIN=circles.auth.ca-central-1.amazoncognito.com
+```
+
+and in `mobile/.env` (copy `mobile/.env.example`), then restart Expo with `npx expo start --clear`:
+
+```
+EXPO_PUBLIC_COGNITO_CLIENT_ID=...
+EXPO_PUBLIC_COGNITO_DOMAIN=circles.auth.ca-central-1.amazoncognito.com
+```
+
+Cognito only sends sign-in back to the redirects it knows: the dev build (`circles://sign-in`), Expo web on
+`http://localhost:8081` and Expo Go on the iOS simulator when Metro runs with `npx expo start --localhost`
+(`exp://127.0.0.1:8081/--/sign-in`). Expo Go on a real phone gets a LAN address Cognito doesn't know, so use a dev build
+there (`npx expo run:ios --device`). Sign-in added native modules, so rebuild the dev app once with
+`npm run ios -w mobile`.
+
+Cognito can't turn passwords off: its sign-up page asks for one, and sign-in offers the email code or the password.
+While SES is in its sandbox, codes only reach verified addresses.
+
+The user pool, managed login domain and app client are in `infra/auth.yml`. Deploy or update them with:
+
+```
+aws cloudformation deploy --profile circles --region ca-central-1 --stack-name circles-auth \
+  --template-file infra/auth.yml --parameter-overrides \
+  SenderArn=arn:aws:ses:ca-central-1:682334556042:identity/contact@billwang.dev \
+  "SenderFrom=Circles <contact@billwang.dev>"
+aws cloudformation describe-stacks --profile circles --region ca-central-1 --stack-name circles-auth \
+  --query 'Stacks[0].Outputs'
+```
+
+The sender must be a verified SES identity in `ca-central-1`; Cognito creates its own role to send through it. The pool
+has deletion protection on, so turn that off before deleting the stack.
 
 **Checks**
 
@@ -58,4 +106,5 @@ the fakes.
 **CI and deployment**
 Every push to any branch runs CI: lint, typecheck, tests and build for every workspace. A push to `main` that touches
 `api/`, `shared/`, the root `package.json` or lockfile, or the workflows also deploys the API to AWS (image to ECR, then
-ECS in `ca-central-1`). `web/` is never deployed. Phones point at the AWS API via `EXPO_PUBLIC_API_URL`.
+ECS in `ca-central-1`). The ECS service needs the three `COGNITO_*` values or the API won't start. `web/` is never
+deployed. Phones point at the AWS API via `EXPO_PUBLIC_API_URL`.
