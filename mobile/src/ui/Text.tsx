@@ -8,13 +8,14 @@ type Props = TextProps & {
 
 export function Text({
   variant = "body",
-  color = "text",
+  color = "foreground",
   style,
   ...rest
 }: Props) {
   const { colors } = useTheme();
   return (
     <RNText
+      maxFontSizeMultiplier={1.5}
       {...rest}
       style={[typeScale[variant], { color: colors[color] }, style]}
     />

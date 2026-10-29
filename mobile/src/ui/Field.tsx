@@ -1,38 +1,47 @@
-import Feather from "@expo/vector-icons/Feather";
-import type { ComponentProps } from "react";
+import { useState } from "react";
 import { StyleSheet, TextInput, type TextInputProps, View } from "react-native";
+import { Icon, type IconName } from "./Icon";
 import { Text } from "./Text";
 import { font, radius, size, space, useTheme } from "./theme";
 
 type Props = TextInputProps & {
   label: string;
-  icon?: ComponentProps<typeof Feather>["name"];
+  icon?: IconName;
+  // A unit shown inside the box ahead of the value, such as "$".
+  prefix?: string;
   error?: string;
 };
 
-export function Field({ label, icon, error, style, ...input }: Props) {
+export function Field({ label, icon, prefix, error, style, ...input }: Props) {
   const { colors } = useTheme();
   return (
     <View style={styles.field}>
       <View style={styles.label}>
         <Text variant="label">{label}</Text>
-        {icon ? (
-          <Feather name={icon} size={24} color={colors.textMuted} />
-        ) : null}
+        {icon ? <Icon name={icon} size={16} color={colors.textMuted} /> : null}
       </View>
-      <TextInput
-        {...input}
-        placeholderTextColor={colors.textMuted}
+      <View
         style={[
-          styles.input,
+          styles.box,
           {
-            backgroundColor: colors.surface,
-            borderColor: error ? colors.danger : colors.border,
-            color: colors.text,
+            backgroundColor: colors.control,
+            borderColor: error ? colors.danger : colors.input,
           },
-          style,
         ]}
-      />
+      >
+        {prefix ? (
+          <Text color="textMuted" style={styles.prefix}>
+            {prefix}
+          </Text>
+        ) : null}
+        <TextInput
+          maxFontSizeMultiplier={1.5}
+          accessibilityLabel={label}
+          {...input}
+          placeholderTextColor={colors.textMuted}
+          style={[styles.input, { color: colors.foreground }, style]}
+        />
+      </View>
       {error ? (
         <Text variant="caption" color="danger">
           {error}
@@ -42,15 +51,33 @@ export function Field({ label, icon, error, style, ...input }: Props) {
   );
 }
 
+// Which field each validation issue is about, for the form's Field errors.
+export function useIssues() {
+  const [issues, setIssues] = useState<
+    { path: PropertyKey[]; message: string }[]
+  >([]);
+  const issue = (field: string) =>
+    issues.find((i) => i.path[0] === field)?.message;
+  return { issue, setIssues };
+}
+
 const styles = StyleSheet.create({
   field: { gap: space.sm },
-  label: { flexDirection: "row", alignItems: "center", gap: space.sm },
-  input: {
-    height: size.control,
-    borderRadius: radius.control,
+  label: { flexDirection: "row", alignItems: "center", gap: space.inline },
+  box: {
+    minHeight: size.control,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.xs,
+    borderRadius: radius.md,
     borderWidth: 1,
-    paddingHorizontal: space.lg,
+    paddingHorizontal: space.md,
+  },
+  prefix: { fontSize: 17 },
+  input: {
+    flex: 1,
+    minHeight: size.control,
     fontFamily: font.regular,
-    fontSize: 16,
+    fontSize: 17,
   },
 });

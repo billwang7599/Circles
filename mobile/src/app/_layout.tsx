@@ -1,47 +1,107 @@
-import { Figtree_400Regular } from "@expo-google-fonts/figtree/400Regular";
-import { Figtree_600SemiBold } from "@expo-google-fonts/figtree/600SemiBold";
-import { Figtree_700Bold } from "@expo-google-fonts/figtree/700Bold";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Inter_400Regular } from "@expo-google-fonts/inter/400Regular";
+import { Inter_500Medium } from "@expo-google-fonts/inter/500Medium";
+import { Inter_600SemiBold } from "@expo-google-fonts/inter/600SemiBold";
+import { Inter_700Bold } from "@expo-google-fonts/inter/700Bold";
+import {
+  focusManager,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
+import * as SystemUI from "expo-system-ui";
+import { useEffect } from "react";
+import { AppState, StatusBar, StyleSheet, View } from "react-native";
+import { isRefusal } from "../api";
 import { typeScale, useTheme } from "../ui/theme";
 
-const queryClient = new QueryClient();
+// A link opened cold still gets Home underneath, so Back has somewhere to go.
+export const unstable_settings = { anchor: "index" };
+
+const queryClient = new QueryClient({
+  // Retry only when the server could not be reached; a refusal is final.
+  defaultOptions: {
+    queries: { retry: (count, error) => !isRefusal(error) && count < 2 },
+  },
+});
+
+// Polling pauses while the app is in the background and refetches on return.
+focusManager.setEventListener((setFocused) => {
+  const subscription = AppState.addEventListener("change", (state) =>
+    setFocused(state === "active"),
+  );
+  return () => subscription.remove();
+});
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
-    Figtree_400Regular,
-    Figtree_600SemiBold,
-    Figtree_700Bold,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
   });
-  const { colors } = useTheme();
+  const { scheme, colors } = useTheme();
+  useEffect(() => {
+    void SystemUI.setBackgroundColorAsync(colors.background);
+  }, [colors.background]);
   if (!fontsLoaded && !fontError) return null;
   return (
     <QueryClientProvider client={queryClient}>
+      <StatusBar
+        barStyle={scheme === "dark" ? "light-content" : "dark-content"}
+      />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: colors.canvas },
+          headerStyle: { backgroundColor: colors.background },
           headerShadowVisible: false,
-          headerTintColor: colors.text,
+          headerBackground: () => (
+            <View
+              style={[
+                styles.header,
+                {
+                  backgroundColor: colors.background,
+                  borderBottomColor: colors.border,
+                },
+              ]}
+            />
+          ),
+          headerTintColor: colors.foreground,
+          headerTitleAlign: "left",
           headerTitleStyle: {
             fontFamily: typeScale.heading.fontFamily,
             fontSize: typeScale.heading.fontSize,
+            color: colors.foreground,
           },
-          contentStyle: { backgroundColor: colors.canvas },
+          headerBackButtonDisplayMode: "minimal",
+          contentStyle: { backgroundColor: colors.background },
         }}
       >
         <Stack.Screen name="index" options={{ title: "Circles" }} />
-        <Stack.Screen name="join" options={{ title: "Join" }} />
+        <Stack.Screen name="settings" options={{ title: "Settings" }} />
+        <Stack.Screen name="join" options={{ title: "Join a circle" }} />
         <Stack.Screen name="circles/new" options={{ title: "New circle" }} />
+        <Stack.Screen name="circles/[circleId]/index" options={{ title: "" }} />
+        <Stack.Screen
+          name="circles/[circleId]/plans/[planId]/index"
+          options={{ title: "" }}
+        />
         <Stack.Screen
           name="circles/[circleId]/plans/new"
           options={{ title: "New plan" }}
         />
         <Stack.Screen
           name="circles/[circleId]/plans/[planId]/register"
-          options={{ title: "Your inputs" }}
+          options={{ title: "" }}
+        />
+        <Stack.Screen
+          name="circles/[circleId]/plans/[planId]/edit"
+          options={{ title: "Edit plan" }}
         />
       </Stack>
     </QueryClientProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  header: { flex: 1, borderBottomWidth: 1 },
+});

@@ -53,11 +53,15 @@ The prototype will be tested with student groups on campus.
 
 ## Repo Layout
 
-| Folder | Purpose |
-| ------ | ------- |
-| `ai/`  | AI planner pipeline |
-| `api/` | Backend servers |
-| `web/` | Web interface |
+| Folder    | Purpose                                                           |
+| --------- | ----------------------------------------------------------------- |
+| `mobile/` | Expo app                                                          |
+| `api/`    | Backend servers                                                   |
+| `shared/` | Schemas and time helpers used by the app, the API and the planner |
+| `ai/`     | AI planner pipeline                                               |
+| `web/`    | Web interface                                                     |
+
+Setup and workflow: [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Status
 

@@ -1,12 +1,15 @@
-import type { PGlite } from "@electric-sql/pglite";
-import type { Pool, PoolClient } from "pg";
+import { Pool, type PoolClient } from "pg";
 
-export type Db = {
+type Tx = {
   query<Row>(text: string, params?: unknown[]): Promise<Row[]>;
   exec(sql: string): Promise<void>;
 };
 
-export function pgDb(source: Pool | PoolClient): Db {
+export type Db = Tx & {
+  transaction<T>(run: (tx: Tx) => Promise<T>): Promise<T>;
+};
+
+function pgTx(source: Pool | PoolClient): Tx {
   return {
     async query(text, params = []) {
       const { rows } = await source.query(text, params);
@@ -18,14 +21,22 @@ export function pgDb(source: Pool | PoolClient): Db {
   };
 }
 
-export function pgliteDb(pg: PGlite): Db {
+export function pgDb(source: Pool | PoolClient): Db {
   return {
-    async query<Row>(text: string, params: unknown[] = []) {
-      const { rows } = await pg.query<Row>(text, params);
-      return rows;
-    },
-    async exec(sql) {
-      await pg.exec(sql);
+    ...pgTx(source),
+    async transaction(run) {
+      const client = source instanceof Pool ? await source.connect() : source;
+      try {
+        await client.query("begin");
+        const result = await run(pgTx(client));
+        await client.query("commit");
+        return result;
+      } catch (err) {
+        await client.query("rollback");
+        throw err;
+      } finally {
+        if (client !== source) client.release();
+      }
     },
   };
 }

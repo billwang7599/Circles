@@ -1,19 +1,24 @@
 import { randomInt } from "node:crypto";
 import {
+  type AvatarColor,
   CreateCircle,
   JoinCircle,
+  nextMove,
   type CircleSummary,
   type CircleView,
   type Me,
   type MemberSummary,
   type MembershipResponse,
-  type PlanSummary,
+  type NextPlan,
+  type PlanPhase,
 } from "@circles/shared";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { account, accountOrNew, memberOf, type AppEnv } from "./auth.ts";
 import { body } from "./body.ts";
 import type { Db } from "./db.ts";
+import { planPhase, type PhaseRow } from "./plan/phase.ts";
+import { optionFacts } from "./plans.ts";
 
 const codeAlphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 
@@ -61,8 +66,48 @@ async function addMember(
     const message =
       typeof constraint === "string" ? conflicts[constraint] : undefined;
     if (message) throw new HTTPException(409, { message });
+    // The circle was removed while this join was in flight.
+    if (constraint === "members_circle_id_fkey")
+      throw new HTTPException(404, { message: "No circle has that code" });
     throw err;
   }
+}
+
+type PlanListRow = PhaseRow & {
+  circleId: string;
+  id: string;
+  title: string;
+  windowStart: string;
+  lockedStart: Date | null;
+  registered: boolean;
+  attending: boolean;
+  voted: boolean;
+  phase: PlanPhase;
+};
+
+// A plan as one member sees it, for queries over plans p joined with that
+// member's registration r and vote v.
+const planColumns = `p.circle_id as "circleId", p.id, p.title, p.status,
+  p.area_id as "areaId", p.window_start::text as "windowStart",
+  p.window_end::text as "windowEnd", p.locked_start as "lockedStart",
+  p.locked_end as "lockedEnd", p.version, p.options_version as "optionsVersion",
+  r.member_id is not null as registered, coalesce(r.attending, false) as attending,
+  v.member_id is not null as voted, ${optionFacts}`;
+
+function nextPlan(plans: PlanListRow[]): NextPlan | null {
+  const inputs = plans.find((p) => nextMove(p) === "inputs");
+  const vote = plans.find((p) => nextMove(p) === "vote");
+  const locked = plans
+    .filter((p) => p.phase.kind === "locked")
+    .sort((a, b) => Number(a.lockedStart) - Number(b.lockedStart));
+  const plan =
+    inputs ?? vote ?? locked[0] ?? plans.find((p) => p.phase.kind === "open");
+  if (!plan) return null;
+  return {
+    id: plan.id,
+    title: plan.title,
+    kind: plan === inputs ? "inputs" : plan === vote ? "vote" : plan.status,
+  };
 }
 
 export function circles(db: Db) {
@@ -91,13 +136,32 @@ export function circles(db: Db) {
 
   app.get("/me", async (c) => {
     const accountId = await account(c, db);
-    const rows = await db.query<Me["circles"][number]>(
+    const circles = await db.query<Omit<Me["circles"][number], "next">>(
       `select c.id, c.name, m.id as "memberId", m.name as "memberName"
        from members m join circles c on c.id = m.circle_id
        where m.account_id = $1 order by m.joined_at`,
       [accountId],
     );
-    return c.json({ circles: rows } satisfies Me);
+    const now = new Date();
+    // The where clause is a coarse cut on the database clock; planPhase decides.
+    const plans = (
+      await db.query<Omit<PlanListRow, "phase">>(
+        `select ${planColumns}
+         from members m
+         join plans p on p.circle_id = m.circle_id
+         left join registrations r on r.plan_id = p.id and r.member_id = m.id
+         left join votes v on v.plan_id = p.id and v.member_id = m.id
+         where m.account_id = $1 and (p.status = 'open' or p.locked_end > now())
+         order by p.window_start, p.created_at`,
+        [accountId],
+      )
+    ).map((p) => ({ ...p, phase: planPhase(p, now) }));
+    return c.json({
+      circles: circles.map((circle) => ({
+        ...circle,
+        next: nextPlan(plans.filter((p) => p.circleId === circle.id)),
+      })),
+    } satisfies Me);
   });
 
   app.get("/circles/:circleId", async (c) => {
@@ -110,16 +174,22 @@ export function circles(db: Db) {
     const members = await db.query<{
       id: string;
       name: string;
+      color: AvatarColor;
       joinedAt: Date;
     }>(
-      'select id, name, joined_at as "joinedAt" from members where circle_id = $1 order by joined_at',
+      `select m.id, m.name, a.color, m.joined_at as "joinedAt"
+       from members m join accounts a on a.id = m.account_id
+       where m.circle_id = $1 order by m.joined_at`,
       [circleId],
     );
-    const plans = await db.query<PlanSummary>(
-      `select id, title, status, window_start::text as "windowStart",
-         window_end::text as "windowEnd", null::text as "lockedStart"
-       from plans where circle_id = $1 order by created_at desc`,
-      [circleId],
+    const now = new Date();
+    const plans = await db.query<Omit<PlanListRow, "phase">>(
+      `select ${planColumns}
+       from plans p
+       left join registrations r on r.plan_id = p.id and r.member_id = $2
+       left join votes v on v.plan_id = p.id and v.member_id = $2
+       where p.circle_id = $1 order by p.created_at desc`,
+      [circleId, me.id],
     );
     return c.json({
       circle,
@@ -128,8 +198,56 @@ export function circles(db: Db) {
         ...m,
         joinedAt: m.joinedAt.toISOString(),
       })),
-      plans,
+      plans: plans.map((p) => ({
+        id: p.id,
+        title: p.title,
+        areaId: p.areaId,
+        windowStart: p.windowStart,
+        windowEnd: p.windowEnd,
+        lockedStart: p.lockedStart?.toISOString() ?? null,
+        phase: planPhase(p, now),
+        registered: p.registered,
+        attending: p.attending,
+        voted: p.voted,
+      })),
     } satisfies CircleView);
+  });
+
+  app.delete("/circles/:circleId/members/me", async (c) => {
+    const circleId = c.req.param("circleId");
+    const me = await memberOf(c, db, circleId);
+    await db.transaction(async (tx) => {
+      // One departure or arrival at a time per circle: a join in flight holds a
+      // share lock on this row, so the roster below is final.
+      await tx.query("select 1 from circles where id = $1 for update", [
+        circleId,
+      ]);
+      const [heir] = await tx.query<{ id: string }>(
+        `select id from members where circle_id = $1 and id <> $2
+         order by joined_at limit 1`,
+        [circleId, me.id],
+      );
+      if (!heir) {
+        await tx.query("delete from circles where id = $1", [circleId]);
+        return;
+      }
+      await tx.query(
+        "update plans set initiator_id = $2 where circle_id = $1 and initiator_id = $3",
+        [circleId, heir.id, me.id],
+      );
+      // Plans counted on the leaver's inputs: their options are stale now,
+      // locked ones too, so an unlock asks for a refresh.
+      await tx.query(
+        `update plans p set version = version + 1
+         where p.circle_id = $1 and exists (
+           select 1 from registrations r
+           where r.plan_id = p.id and r.member_id = $2 and r.attending
+         )`,
+        [circleId, me.id],
+      );
+      await tx.query("delete from members where id = $1", [me.id]);
+    });
+    return c.json({ ok: true });
   });
 
   return app;

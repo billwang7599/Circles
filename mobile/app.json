@@ -14,7 +14,7 @@
     "android": {
       "package": "ca.circles.app",
       "adaptiveIcon": {
-        "backgroundColor": "#FAF8F5",
+        "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -33,9 +33,9 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 160,
           "resizeMode": "contain",
-          "backgroundColor": "#FAF8F5",
+          "backgroundColor": "#fffcf0",
           "dark": {
-            "backgroundColor": "#141210"
+            "backgroundColor": "#100f0f"
           }
         }
       ],

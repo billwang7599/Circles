@@ -7,11 +7,20 @@ const Name = z
   .min(1, "Enter a name")
   .max(40, "At most 40 characters");
 
-export const JoinCode = z
+const JoinCode = z
   .string()
   .trim()
   .toUpperCase()
   .regex(/^[2-9A-HJ-NP-Z]{6}$/, "Enter the 6-character code");
+
+export const AVATAR_COLORS = [
+  "violet",
+  "blue",
+  "fern",
+  "ember",
+  "rose",
+] as const;
+export type AvatarColor = (typeof AVATAR_COLORS)[number];
 
 export const CreateCircle = z.object({ name: Name, memberName: Name });
 export type CreateCircle = z.infer<typeof CreateCircle>;
@@ -28,13 +37,25 @@ export type MembershipResponse = {
   member: MemberSummary;
 };
 
+export type NextPlan = {
+  id: string;
+  title: string;
+  kind: "inputs" | "vote" | "locked" | "open";
+};
+
 export type Me = {
-  circles: { id: string; name: string; memberId: string; memberName: string }[];
+  circles: {
+    id: string;
+    name: string;
+    memberId: string;
+    memberName: string;
+    next: NextPlan | null;
+  }[];
 };
 
 export type CircleView = {
   circle: CircleSummary;
   me: MemberSummary;
-  members: { id: string; name: string; joinedAt: string }[];
+  members: { id: string; name: string; color: AvatarColor; joinedAt: string }[];
   plans: PlanSummary[];
 };

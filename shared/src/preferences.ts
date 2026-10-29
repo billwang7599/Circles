@@ -16,7 +16,7 @@ export const PreferenceId = z.enum([
 ]);
 export type PreferenceId = z.infer<typeof PreferenceId>;
 
-export type Preference = { id: PreferenceId; label: string; types: string[] };
+type Preference = { id: PreferenceId; label: string; types: string[] };
 
 export const PREFERENCES: readonly Preference[] = [
   {

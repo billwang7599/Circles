@@ -15,17 +15,28 @@ const partHours: Record<Part, [number, number]> = {
   evening: [17, 23],
 };
 
-function wallClockAsUtc(date: Date, timezone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(date);
+const wallClockFormats = new Map<string, Intl.DateTimeFormat>();
+
+function wallClockFormat(timezone: string): Intl.DateTimeFormat {
+  let format = wallClockFormats.get(timezone);
+  if (!format) {
+    format = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    wallClockFormats.set(timezone, format);
+  }
+  return format;
+}
+
+export function wallClockAsUtc(date: Date, timezone: string): number {
+  const parts = wallClockFormat(timezone).formatToParts(date);
   const field = (type: Intl.DateTimeFormatPartTypes) =>
     Number(parts.find((p) => p.type === type)?.value);
   return Date.UTC(

@@ -5,9 +5,17 @@ import type { AppEnv } from "./auth.ts";
 import { circles } from "./circles.ts";
 import type { Db } from "./db.ts";
 import { log } from "./log.ts";
+import { options } from "./options.ts";
+import { fakePlaces, fakeRanker } from "./plan/fakes.ts";
+import type { PlacesClient } from "./plan/places.ts";
+import type { Ranker } from "./plan/rank.ts";
 import { plans } from "./plans.ts";
+import { votes } from "./votes.ts";
 
-export function createApp(db: Db, options: { cors?: boolean } = {}) {
+export function createApp(
+  db: Db,
+  deps: { cors?: boolean; ranker?: Ranker; places?: PlacesClient } = {},
+) {
   const app = new Hono<AppEnv>();
 
   app.use(async (c, next) => {
@@ -21,7 +29,7 @@ export function createApp(db: Db, options: { cors?: boolean } = {}) {
       accountId: c.get("accountId"),
     });
   });
-  if (options.cors) app.use(cors());
+  if (deps.cors) app.use(cors());
 
   app.onError((err, c) => {
     if (err instanceof HTTPException)
@@ -37,6 +45,11 @@ export function createApp(db: Db, options: { cors?: boolean } = {}) {
   });
   app.route("/api", circles(db));
   app.route("/api", plans(db));
+  app.route(
+    "/api",
+    options(db, deps.ranker ?? fakeRanker(), deps.places ?? fakePlaces()),
+  );
+  app.route("/api", votes(db));
 
   return app;
 }

@@ -1,25 +1,26 @@
+import type { PlanPhase } from "@circles/shared";
 import { StyleSheet, View } from "react-native";
+import { Icon } from "./Icon";
 import { Text } from "./Text";
-import { radius, space, useTheme } from "./theme";
+import { space, useTheme } from "./theme";
 
-export function StatusBadge({ status }: { status: "open" | "locked" }) {
+export function StatusBadge({ phase }: { phase: PlanPhase }) {
   const { colors } = useTheme();
-  const color = status === "open" ? colors.success : colors.textMuted;
+  const badge =
+    phase.kind === "locked" || phase.kind === "past"
+      ? { icon: "check" as const, text: "Locked in" }
+      : phase.kind === "ended"
+        ? { icon: "clock" as const, text: "Ended" }
+        : null;
+  if (!badge) return null;
   return (
-    <View style={[styles.badge, { borderColor: color }]}>
-      <Text variant="caption" style={{ color }}>
-        {status === "open" ? "Open" : "Locked"}
-      </Text>
+    <View style={styles.badge}>
+      <Icon name={badge.icon} size={18} color={colors.textMuted} />
+      <Text color="textMuted">{badge.text}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  badge: {
-    borderRadius: radius.full,
-    borderWidth: 1,
-    paddingHorizontal: space.sm,
-    paddingVertical: 2,
-    alignSelf: "flex-start",
-  },
+  badge: { flexDirection: "row", alignItems: "center", gap: space.inline },
 });

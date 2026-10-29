@@ -2,12 +2,14 @@ import {
   areaById,
   CreatePlan,
   datesIn,
+  EditPlan,
   RegistrationInput,
+  sameRegistration,
   windowFor,
-  type AreaId,
   type BusyPart,
   type MemberSummary,
-  type PlanStatus,
+  type OptionView,
+  type PlanPhase,
   type PlanView,
   type PreferenceId,
 } from "@circles/shared";
@@ -17,37 +19,61 @@ import { z } from "zod";
 import { memberOf, type AppEnv } from "./auth.ts";
 import { body } from "./body.ts";
 import type { Db } from "./db.ts";
+import { planPhase, type PhaseRow } from "./plan/phase.ts";
 
-type PlanRow = {
+type PlanRow = PhaseRow & {
   id: string;
   circleId: string;
+  circleName: string;
   title: string;
-  areaId: AreaId;
   windowStart: string;
-  windowEnd: string;
-  status: PlanStatus;
-  version: number;
   initiatorId: string;
   initiatorName: string;
+  lockedOptionId: string | null;
+  lockedStart: Date | null;
+  phase: PlanPhase;
 };
 
-async function loadPlan(
+// What planPhase needs to know about a plan's options, for queries over plans p.
+export const optionFacts = `
+  (select count(*) from options o where o.plan_id = p.id)::int as "optionCount",
+  (select max((t->>'start')::timestamptz)
+   from options o, jsonb_array_elements(o.times) t where o.plan_id = p.id) as "lastStart"`;
+
+export async function loadPlan(
   db: Db,
   planId: string,
   circleId: string,
 ): Promise<PlanRow> {
   const [plan] = z.uuid().safeParse(planId).success
-    ? await db.query<PlanRow>(
-        `select p.id, p.circle_id as "circleId", p.title, p.area_id as "areaId",
-           p.window_start::text as "windowStart", p.window_end::text as "windowEnd",
-           p.status, p.version, m.id as "initiatorId", m.name as "initiatorName"
-         from plans p join members m on m.id = p.initiator_id
+    ? await db.query<Omit<PlanRow, "phase">>(
+        `select p.id, p.circle_id as "circleId", c.name as "circleName", p.title,
+           p.area_id as "areaId", p.window_start::text as "windowStart",
+           p.window_end::text as "windowEnd", p.status, p.version,
+           m.id as "initiatorId", m.name as "initiatorName",
+           p.locked_option_id as "lockedOptionId", p.locked_start as "lockedStart",
+           p.locked_end as "lockedEnd", p.options_version as "optionsVersion",
+           ${optionFacts}
+         from plans p
+         join members m on m.id = p.initiator_id
+         join circles c on c.id = p.circle_id
          where p.id = $1 and p.circle_id = $2`,
         [planId, circleId],
       )
     : [];
   if (!plan) throw new HTTPException(404, { message: "Plan not found" });
-  return plan;
+  return { ...plan, phase: planPhase(plan, new Date()) };
+}
+
+export function assertNotEnded(plan: PlanRow) {
+  if (plan.phase.kind === "ended" || plan.phase.kind === "past")
+    throw new HTTPException(409, { message: "This plan has ended" });
+}
+
+export function assertOpen(plan: PlanRow) {
+  assertNotEnded(plan);
+  if (plan.phase.kind !== "open")
+    throw new HTTPException(409, { message: "Plan is locked" });
 }
 
 export async function planView(
@@ -55,43 +81,61 @@ export async function planView(
   plan: PlanRow,
   me: MemberSummary,
 ): Promise<PlanView> {
-  const members = await db.query<PlanView["members"][number]>(
-    `select m.id, m.name, r.member_id is not null as registered,
-       coalesce(r.attending, false) as attending, null::uuid as "voteOptionId"
-     from members m
-     left join registrations r on r.plan_id = $1 and r.member_id = m.id
-     where m.circle_id = $2 order by m.joined_at`,
-    [plan.id, plan.circleId],
-  );
-  const [mine] = await db.query<{
-    defaultBudgetCents: number | null;
-    defaultPreferences: PreferenceId[];
-    attending: boolean | null;
-    budgetCents: number | null;
-    busy: BusyPart[] | null;
-    preferences: PreferenceId[] | null;
-  }>(
-    `select m.default_budget_cents as "defaultBudgetCents",
-       m.preferences as "defaultPreferences", r.attending,
-       r.budget_cents as "budgetCents", r.busy, r.preferences
-     from members m
-     left join registrations r on r.plan_id = $1 and r.member_id = m.id
-     where m.id = $2`,
-    [plan.id, me.id],
-  );
+  const [members, [mine], options] = await Promise.all([
+    db.query<PlanView["members"][number]>(
+      `select m.id, m.name, a.color, r.member_id is not null as registered,
+         coalesce(r.attending, false) as attending, v.option_id as "voteOptionId"
+       from members m
+       join accounts a on a.id = m.account_id
+       left join registrations r on r.plan_id = $1 and r.member_id = m.id
+       left join votes v on v.plan_id = $1 and v.member_id = m.id
+       where m.circle_id = $2 order by m.joined_at`,
+      [plan.id, plan.circleId],
+    ),
+    db.query<{
+      defaultBudgetCents: number | null;
+      defaultPreferences: PreferenceId[];
+      attending: boolean | null;
+      budgetCents: number | null;
+      busy: BusyPart[] | null;
+      preferences: PreferenceId[] | null;
+    }>(
+      `select m.default_budget_cents as "defaultBudgetCents",
+         m.preferences as "defaultPreferences", r.attending,
+         r.budget_cents as "budgetCents", r.busy, r.preferences
+       from members m
+       left join registrations r on r.plan_id = $1 and r.member_id = m.id
+       where m.id = $2`,
+      [plan.id, me.id],
+    ),
+    db.query<OptionView>(
+      `select o.id, o.rank, o.place, o.times, o.summary, o.unverified,
+         (select count(*) from votes v where v.option_id = o.id)::int as votes
+       from options o where o.plan_id = $1 order by o.rank`,
+      [plan.id],
+    ),
+  ]);
   return {
     plan: {
       id: plan.id,
       title: plan.title,
+      circle: { id: plan.circleId, name: plan.circleName },
       area: { id: plan.areaId, name: areaById(plan.areaId).name },
       windowStart: plan.windowStart,
       windowEnd: plan.windowEnd,
-      status: plan.status,
-      version: plan.version,
+      phase: plan.phase,
       initiator: { id: plan.initiatorId, name: plan.initiatorName },
+      locked:
+        plan.lockedOptionId && plan.lockedStart
+          ? {
+              optionId: plan.lockedOptionId,
+              start: plan.lockedStart.toISOString(),
+            }
+          : undefined,
     },
     members,
     me: {
+      id: me.id,
       registration:
         mine.attending === null
           ? undefined
@@ -106,8 +150,7 @@ export async function planView(
         preferences: mine.defaultPreferences,
       },
     },
-    options: [],
-    optionsStale: false,
+    options,
   };
 }
 
@@ -139,43 +182,132 @@ export function plans(db: Db) {
     return c.json((await planView(db, plan, me)) satisfies PlanView);
   });
 
+  app.put("/circles/:circleId/plans/:planId", async (c) => {
+    const { circleId, planId } = c.req.param();
+    const me = await memberOf(c, db, circleId);
+    const input = await body(c, EditPlan);
+    const plan = await loadPlan(db, planId, circleId);
+    assertOpen(plan);
+    if (plan.initiatorId !== me.id)
+      throw new HTTPException(403, {
+        message: "Only the initiator can edit this plan",
+      });
+    const window = input.when
+      ? windowFor(input.when, areaById(input.areaId).timezone, new Date())
+      : { windowStart: plan.windowStart, windowEnd: plan.windowEnd };
+    const moved =
+      input.areaId !== plan.areaId ||
+      window.windowStart !== plan.windowStart ||
+      window.windowEnd !== plan.windowEnd;
+    if (!moved && input.title === plan.title)
+      return c.json((await planView(db, plan, me)) satisfies PlanView);
+    await db.transaction(async (tx) => {
+      const [updated] = await tx.query<{ id: string }>(
+        `update plans set title = $2, area_id = $3, window_start = $4,
+           window_end = $5, version = version + 1
+         where id = $1 and status = 'open' returning id`,
+        [
+          plan.id,
+          input.title,
+          input.areaId,
+          window.windowStart,
+          window.windowEnd,
+        ],
+      );
+      if (!updated) throw new HTTPException(409, { message: "Plan is locked" });
+      if (!moved) return;
+      await tx.query("delete from options where plan_id = $1", [plan.id]);
+      await tx.query(
+        `update registrations r set busy = coalesce(
+           (select jsonb_agg(b) from jsonb_array_elements(r.busy) b
+            where (b->>'date')::date between $2::date and $3::date),
+           '[]'::jsonb)
+         where plan_id = $1`,
+        [plan.id, window.windowStart, window.windowEnd],
+      );
+    });
+    const edited = await loadPlan(db, plan.id, circleId);
+    return c.json((await planView(db, edited, me)) satisfies PlanView);
+  });
+
   app.put("/circles/:circleId/plans/:planId/registration", async (c) => {
     const { circleId, planId } = c.req.param();
     const me = await memberOf(c, db, circleId);
     const input = await body(c, RegistrationInput);
     const plan = await loadPlan(db, planId, circleId);
+    assertOpen(plan);
     const dates = new Set(datesIn(plan.windowStart, plan.windowEnd));
     if (input.busy.some((b) => !dates.has(b.date)))
       throw new HTTPException(400, {
         message: "Busy date outside the window",
       });
-    const [bumped] = await db.query<{ version: number }>(
-      "update plans set version = version + 1 where id = $1 and status = 'open' returning version",
-      [plan.id],
+    // Saving the same answers again changes nothing, so the options stay fresh.
+    const [current] = await db.query<{
+      attending: boolean;
+      budgetCents: number | null;
+      busy: BusyPart[];
+      preferences: PreferenceId[];
+    }>(
+      `select attending, budget_cents as "budgetCents", busy, preferences
+       from registrations where plan_id = $1 and member_id = $2`,
+      [plan.id, me.id],
     );
-    if (!bumped) throw new HTTPException(409, { message: "Plan is locked" });
-    await db.query(
-      `insert into registrations (plan_id, member_id, attending, budget_cents, busy, preferences)
-       values ($1, $2, $3, $4, $5::jsonb, $6)
-       on conflict (plan_id, member_id) do update set
-         attending = excluded.attending, budget_cents = excluded.budget_cents,
-         busy = excluded.busy, preferences = excluded.preferences, updated_at = now()`,
-      [
-        plan.id,
-        me.id,
-        input.attending,
-        input.budgetCents ?? null,
-        JSON.stringify(input.busy),
-        input.preferences,
-      ],
-    );
-    if (input.attending)
-      await db.query(
-        "update members set default_budget_cents = $2, preferences = $3 where id = $1",
-        [me.id, input.budgetCents, input.preferences],
+    const previous = current && {
+      ...current,
+      budgetCents: current.budgetCents ?? undefined,
+    };
+    if (sameRegistration(input, previous))
+      return c.json((await planView(db, plan, me)) satisfies PlanView);
+    // Only answers the planner used, or will use, invalidate options: someone
+    // who was never in and stays out changes nothing for the group.
+    const affects = (previous?.attending ?? false) || input.attending;
+    await db.transaction(async (tx) => {
+      const [open] = await tx.query<{ version: number }>(
+        `update plans set version = version + case when $2 then 1 else 0 end
+         where id = $1 and status = 'open' returning version`,
+        [plan.id, affects],
       );
-    const view = await planView(db, { ...plan, version: bumped.version }, me);
-    return c.json(view satisfies PlanView);
+      if (!open) throw new HTTPException(409, { message: "Plan is locked" });
+      await tx.query(
+        `insert into registrations (plan_id, member_id, attending, budget_cents, busy, preferences)
+         values ($1, $2, $3, $4, $5::jsonb, $6)
+         on conflict (plan_id, member_id) do update set
+           attending = excluded.attending, budget_cents = excluded.budget_cents,
+           busy = excluded.busy, preferences = excluded.preferences, updated_at = now()`,
+        [
+          plan.id,
+          me.id,
+          input.attending,
+          input.budgetCents ?? null,
+          JSON.stringify(input.busy),
+          input.preferences,
+        ],
+      );
+      if (input.attending)
+        await tx.query(
+          "update members set default_budget_cents = $2, preferences = $3 where id = $1",
+          [me.id, input.budgetCents, input.preferences],
+        );
+      else
+        await tx.query(
+          "delete from votes where plan_id = $1 and member_id = $2",
+          [plan.id, me.id],
+        );
+    });
+    const saved = await loadPlan(db, plan.id, circleId);
+    return c.json((await planView(db, saved, me)) satisfies PlanView);
+  });
+
+  app.delete("/circles/:circleId/plans/:planId", async (c) => {
+    const { circleId, planId } = c.req.param();
+    const me = await memberOf(c, db, circleId);
+    const plan = await loadPlan(db, planId, circleId);
+    if (plan.initiatorId !== me.id)
+      throw new HTTPException(403, {
+        message: "Only the initiator can delete this plan",
+      });
+    await db.query("delete from plans where id = $1", [plan.id]);
+    return c.json({ ok: true });
   });
 
   return app;

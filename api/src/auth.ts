@@ -1,5 +1,5 @@
-import { createHash, randomBytes } from "node:crypto";
-import type { MemberSummary } from "@circles/shared";
+import { createHash, randomBytes, randomInt } from "node:crypto";
+import { AVATAR_COLORS, type MemberSummary } from "@circles/shared";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -36,8 +36,8 @@ export async function accountOrNew(
   if (existing) return { accountId: existing };
   const token = randomBytes(32).toString("base64url");
   const [row] = await db.query<{ id: string }>(
-    "insert into accounts (token_hash) values ($1) returning id",
-    [hash(token)],
+    "insert into accounts (token_hash, color) values ($1, $2) returning id",
+    [hash(token), AVATAR_COLORS[randomInt(AVATAR_COLORS.length)]],
   );
   c.set("accountId", row.id);
   return { accountId: row.id, token };

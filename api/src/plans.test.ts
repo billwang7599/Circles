@@ -1,59 +1,30 @@
+import { randomUUID } from "node:crypto";
 import {
   datesIn,
-  type MembershipResponse,
+  type CircleView,
   type PlanView,
   type RegistrationInput,
 } from "@circles/shared";
 import { beforeAll, expect, test } from "vitest";
-import { createApp } from "./app.ts";
-import { testDb } from "./testDb.ts";
+import type { Db } from "./db.ts";
+import { attending, testApp, type TestApp } from "./testApp.ts";
 
-let app: ReturnType<typeof createApp>;
+let call: TestApp["call"];
+let db: Db;
 let circleId: string;
 let nicky: string;
 let bill: string;
-
-function call(method: string, path: string, token?: string, data?: unknown) {
-  return app.request(path, {
-    method,
-    headers: {
-      "content-type": "application/json",
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-    body: data === undefined ? undefined : JSON.stringify(data),
-  });
-}
-
-async function membership(path: string, data: unknown) {
-  const res = await call("POST", path, undefined, data);
-  expect(res.status).toBe(201);
-  return (await res.json()) as MembershipResponse & { token: string };
-}
-
-async function createPlan(when: string) {
-  const res = await call("POST", `/api/circles/${circleId}/plans`, nicky, {
-    title: "Ramen",
-    areaId: "uw",
-    when,
-  });
-  expect(res.status).toBe(201);
-  return ((await res.json()) as PlanView).plan;
-}
+let createPlan: (when: string) => ReturnType<TestApp["createPlan"]>;
+let planWithOptions: () => ReturnType<TestApp["planWithOptions"]>;
 
 beforeAll(async () => {
-  app = createApp(await testDb());
-  const created = await membership("/api/circles", {
-    name: "Dinner club",
-    memberName: "Nicky",
-  });
-  circleId = created.circle.id;
-  nicky = created.token;
-  bill = (
-    await membership("/api/circles/join", {
-      code: created.circle.joinCode,
-      name: "Bill",
-    })
-  ).token;
+  const t = await testApp();
+  ({ call, db } = t);
+  const circle = await t.circleWith("Nicky", "Bill");
+  circleId = circle.circleId;
+  [nicky, bill] = circle.tokens;
+  createPlan = (when) => t.createPlan(circleId, nicky, when);
+  planWithOptions = () => t.planWithOptions(circleId, [nicky, bill]);
 });
 
 test("another member's budget and busy times never appear in the plan body", async () => {
@@ -112,4 +83,135 @@ test("a busy date outside the window is 400", async () => {
   );
   expect(res.status).toBe(400);
   expect(await res.json()).toEqual({ error: "Busy date outside the window" });
+});
+
+test("the initiator deletes a plan; another member is 403", async () => {
+  const plan = await createPlan("week");
+  const path = `/api/circles/${circleId}/plans/${plan.id}`;
+  const refused = await call("DELETE", path, bill);
+  expect(refused.status).toBe(403);
+  expect(await refused.json()).toEqual({
+    error: "Only the initiator can delete this plan",
+  });
+  const res = await call("DELETE", path, nicky);
+  expect(res.status).toBe(200);
+  expect((await call("GET", path, nicky)).status).toBe(404);
+  const circle = (await (
+    await call("GET", `/api/circles/${circleId}`, nicky)
+  ).json()) as CircleView;
+  expect(circle.plans.map((p) => p.id)).not.toContain(plan.id);
+});
+
+test("the initiator edits a plan; moving its window clears options and busy dates outside it", async () => {
+  const { path, view } = await planWithOptions();
+  const dates = datesIn(view.plan.windowStart, view.plan.windowEnd);
+  const busy = await call("PUT", `${path}/registration`, bill, {
+    attending: true,
+    budgetCents: 3000,
+    busy: [{ date: dates[1], part: "evening" }],
+    preferences: [],
+  });
+  expect(busy.status).toBe(200);
+
+  const refused = await call("PUT", path, bill, {
+    title: "Ramen night",
+    areaId: "uw",
+  });
+  expect(refused.status).toBe(403);
+  expect(await refused.json()).toEqual({
+    error: "Only the initiator can edit this plan",
+  });
+
+  const renamed = await call("PUT", path, nicky, {
+    title: "Ramen night",
+    areaId: "uw",
+  });
+  expect(renamed.status).toBe(200);
+  const afterRename = (await renamed.json()) as PlanView;
+  expect(afterRename.plan.title).toBe("Ramen night");
+  expect(afterRename.plan.windowEnd).toBe(view.plan.windowEnd);
+  expect(afterRename.plan.phase).toEqual({ kind: "open", options: "stale" });
+  expect(afterRename.options.map((o) => o.id)).toEqual(
+    view.options.map((o) => o.id),
+  );
+
+  const moved = await call("PUT", path, nicky, {
+    title: "Ramen night",
+    areaId: "uw",
+    when: "today",
+  });
+  expect(moved.status).toBe(200);
+  const afterMove = (await moved.json()) as PlanView;
+  expect(afterMove.plan.windowEnd).toBe(afterMove.plan.windowStart);
+  expect(afterMove.options).toEqual([]);
+  const bills = (await (await call("GET", path, bill)).json()) as PlanView;
+  expect(bills.me.registration).toMatchObject({
+    attending: true,
+    budgetCents: 3000,
+    busy: [],
+  });
+});
+
+test("registering, voting, locking and generating on an ended plan are 409", async () => {
+  const plan = await createPlan("today");
+  await db.query(
+    "update plans set window_start = window_start - 1, window_end = window_end - 1 where id = $1",
+    [plan.id],
+  );
+  const path = `/api/circles/${circleId}/plans/${plan.id}`;
+  const attempts: [string, string, string, unknown][] = [
+    [
+      "PUT",
+      "registration",
+      bill,
+      { attending: true, budgetCents: 2000, busy: [], preferences: [] },
+    ],
+    ["PUT", "vote", bill, { optionId: randomUUID() }],
+    [
+      "POST",
+      "lock",
+      nicky,
+      { optionId: randomUUID(), start: new Date().toISOString() },
+    ],
+    ["POST", "options", nicky, undefined],
+  ];
+  for (const [method, route, token, data] of attempts) {
+    const res = await call(method, `${path}/${route}`, token, data);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "This plan has ended" });
+  }
+  const view = (await (await call("GET", path, nicky)).json()) as PlanView;
+  expect(view.plan.phase).toEqual({ kind: "ended" });
+  const circle = (await (
+    await call("GET", `/api/circles/${circleId}`, nicky)
+  ).json()) as CircleView;
+  expect(circle.plans.find((p) => p.id === plan.id)?.phase).toEqual({
+    kind: "ended",
+  });
+});
+
+test("saving the same answers again keeps the options fresh; a change makes them stale", async () => {
+  const { path } = await planWithOptions();
+  const same = await call(
+    "PUT",
+    `${path}/registration`,
+    bill,
+    attending(3000, "sushi"),
+  );
+  expect(same.status).toBe(200);
+  expect(((await same.json()) as PlanView).plan.phase).toEqual({
+    kind: "open",
+    options: "fresh",
+  });
+  const changed = await call(
+    "PUT",
+    `${path}/registration`,
+    bill,
+    attending(2500, "sushi"),
+  );
+  expect(changed.status).toBe(200);
+  expect(((await changed.json()) as PlanView).plan.phase).toEqual({
+    kind: "open",
+    options: "stale",
+  });
 });
