@@ -1,12 +1,15 @@
-name: Mobile Deploy
+name: Deploy
 
 on:
   push:
     branches: [main]
     paths:
-      - mobile/**
-      - .github/workflows/mobile-ci.yml
-      - .github/workflows/mobile-deploy.yml
+      - api/**
+      - shared/**
+      - package.json
+      - package-lock.json
+      - .github/workflows/ci.yml
+      - .github/workflows/deploy.yml
   workflow_dispatch:
 
 defaults:
@@ -16,7 +19,7 @@ defaults:
 jobs:
   ci:
     if: vars.AWS_ROLE_ARN != ''
-    uses: ./.github/workflows/mobile-ci.yml
+    uses: ./.github/workflows/ci.yml
 
   api:
     needs: ci
@@ -46,7 +49,6 @@ jobs:
       - id: ecr
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
       - name: Build and push image
-        working-directory: mobile
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         # Tags are immutable, so a re-run of the same commit reuses the image it already pushed.

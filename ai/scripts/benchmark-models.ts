@@ -1,15 +1,19 @@
 // Compare Cloudflare Workers AI models on the planner's one LLM call: ranking.
-// Usage (from api/): npx tsx scripts/benchmark-models.ts [model ...]
-// Uses real calls and your Workers AI credits. Reads api/.env.
-import { FakeRestaurantClient, LlmClient, type LlmUsage } from "@circles/ai";
+// Usage (from ai/): npx tsx scripts/benchmark-models.ts [model ...]
+// Uses real calls and your Workers AI credits. Reads ai/.env.
 import type { LanguageModel } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
+import {
+  FakeRestaurantClient,
+  LlmClient,
+  type LlmUsage,
+} from "../src/index.ts";
 
 process.loadEnvFile();
 const accountId = process.env.CLOUDFLARE_ACCOUNT_ID!;
 const apiKey = process.env.CLOUDFLARE_API_TOKEN!;
 if (!accountId || !apiKey)
-  throw new Error("Set Cloudflare credentials in api/.env");
+  throw new Error("Set Cloudflare credentials in ai/.env");
 
 const workersai = createWorkersAI({ accountId, apiKey });
 const CALL_TIMEOUT_MS = 90_000;

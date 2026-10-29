@@ -1,4 +1,12 @@
-import type { PlanRequest, User } from "@circles/shared";
+import {
+  Part,
+  areaById,
+  datesIn,
+  partInterval,
+  windowFor,
+  type BusyPart,
+} from "@circles/shared";
+import type { Member, PlanRequest } from "./types.ts";
 import { describe, expect, test } from "vitest";
 import {
   FakeRestaurantClient,
@@ -9,31 +17,30 @@ import { LlmClient } from "./llm.ts";
 import { PlannerError, planEvent, type PlanDeps } from "./plan.ts";
 import type { RestaurantClient, RestaurantQuery } from "./restaurants.ts";
 
-// Saturday 2026-10-03 11:00 local (Toronto, EDT).
+// Saturday 2026-10-03 11:00 local (Waterloo, EDT).
 const NOW = new Date("2026-10-03T15:00:00Z");
+const AREA = areaById("uptown");
+const WINDOW = windowFor("twoWeeks", AREA.timezone, NOW);
 
-const toronto = {
-  name: "Toronto",
-  lat: 43.6532,
-  lng: -79.3832,
-  timezone: "America/Toronto",
-};
-const user = (over: Partial<User> = {}): User => ({
+const user = (over: Partial<Member> = {}): Member => ({
   id: "u",
   name: "U",
-  location: toronto,
-  budget: 40,
-  unavailable: [],
+  budgetCents: 4000,
+  busy: [],
+  preferences: [],
   ...over,
 });
+const busyAllDay = (dates: string[]): BusyPart[] =>
+  dates.flatMap((date) => Part.options.map((part) => ({ date, part })));
 const request = (
-  members: User[],
+  members: Member[],
   text = "dinner",
   over: Partial<PlanRequest> = {},
 ): PlanRequest => ({
   text,
   group: { members },
-  location: toronto,
+  areaId: AREA.id,
+  ...WINDOW,
   radiusKm: 15,
   filterModes: {
     budget: "hard",
@@ -92,7 +99,10 @@ describe("planEvent", () => {
 
   test("the strictest member budget limits every place", async () => {
     const r = await planEvent(
-      request([user({ budget: 100 }), user({ id: "v", budget: 10 })]),
+      request([
+        user({ budgetCents: 10_000 }),
+        user({ id: "v", budgetCents: 1000 }),
+      ]),
       deps(),
     );
     if (r.status !== "ok") throw new Error("expected ok");
@@ -116,21 +126,24 @@ describe("planEvent", () => {
     }
   });
 
-  test("times when a member is unavailable are never offered", async () => {
-    // Saturday 11:00-23:00 local is blocked for one member, so Sat times must not appear.
-    const blocked = {
-      start: "2026-10-03T15:00:00Z",
-      end: "2026-10-04T03:00:00Z",
-    };
+  test("times when a member is busy are never offered", async () => {
+    const busy: BusyPart[] = [
+      { date: "2026-10-03", part: "afternoon" },
+      { date: "2026-10-03", part: "evening" },
+    ];
     const r = await planEvent(
-      request([user(), user({ id: "v", unavailable: [blocked] })], "ramen"),
+      request([user(), user({ id: "v", busy })], "ramen"),
       deps(),
     );
     if (r.status !== "ok") throw new Error("expected ok");
+    const blocked = busy.map((b) =>
+      partInterval(b.date, b.part, AREA.timezone),
+    );
     for (const o of r.options) {
       for (const t of o.availableTimes) {
-        const overlaps = t.start < blocked.end && blocked.start < t.end;
-        expect(overlaps).toBe(false);
+        for (const b of blocked) {
+          expect(t.start < b.end && b.start < t.end).toBe(false);
+        }
       }
     }
   });
@@ -146,14 +159,8 @@ describe("planEvent", () => {
   });
 
   test("no time when everyone is free gives a clear no-match", async () => {
-    const wholeRange = {
-      start: "2026-10-03T00:00:00Z",
-      end: "2026-10-20T00:00:00Z",
-    };
-    const r = await planEvent(
-      request([user({ unavailable: [wholeRange] })]),
-      deps(),
-    );
+    const busy = busyAllDay(datesIn(WINDOW.windowStart, WINDOW.windowEnd));
+    const r = await planEvent(request([user({ busy })]), deps());
     expect(r).toMatchObject({ status: "no_matches", reason: "no_free_time" });
   });
 
@@ -201,25 +208,15 @@ describe("planEvent", () => {
         return [];
       },
     };
-    const east = { ...toronto, name: "East", lat: 43.7, lng: -79.2 };
+    const kitchener = areaById("kitchener");
     await planEvent(
-      request([user()], "dinner", { location: east, radiusKm: 8 }),
+      request([user()], "dinner", { areaId: kitchener.id, radiusKm: 8 }),
       deps({}, spy),
     );
     expect(seen[0]).toMatchObject({
-      center: { lat: 43.7, lng: -79.2 },
+      center: { lat: kitchener.lat, lng: kitchener.lng },
       radiusKm: 8,
     });
-  });
-
-  test("members' own positions do not limit the search", async () => {
-    // A member far from the search location does not stop a plan there.
-    const far = { ...toronto, name: "Far", lat: 49.28, lng: -123.12 };
-    const r = await planEvent(
-      request([user(), user({ id: "v", location: far })]),
-      deps(),
-    );
-    expect(r.status).toBe("ok");
   });
 
   test("a search with no results gives no_restaurants", async () => {
@@ -228,25 +225,20 @@ describe("planEvent", () => {
     expect(r).toMatchObject({ status: "no_matches", reason: "no_restaurants" });
   });
 
-  test("mealtimes follow the search location's time zone, not the members'", async () => {
-    // Same group and clock, searched in Vancouver. Opening hours are local to the place,
-    // so the same free time maps to a different local hour than in Toronto.
-    const vancouver = {
-      name: "Vancouver",
-      lat: 49.2827,
-      lng: -123.1207,
-      timezone: "America/Vancouver",
-    };
-    const inToronto = await planEvent(request([user()]), deps());
-    const inVancouver = await planEvent(
-      request([user()], "dinner", { location: vancouver }),
-      deps(),
+  test("busy parts and mealtimes are read on the area's clock", async () => {
+    // Busy at every part but Sunday evening, so every time offered falls inside it.
+    const dates = datesIn(WINDOW.windowStart, WINDOW.windowEnd);
+    const busy = busyAllDay(dates).filter(
+      (b) => b.date !== "2026-10-04" || b.part !== "evening",
     );
-    if (inToronto.status !== "ok" || inVancouver.status !== "ok")
-      throw new Error("expected ok");
-    const first = (r: typeof inToronto) =>
-      r.options[0]!.availableTimes[0]!.start;
-    expect(first(inToronto)).not.toBe(first(inVancouver));
+    const r = await planEvent(request([user({ busy })], "ramen"), deps());
+    if (r.status !== "ok") throw new Error("expected ok");
+    const evening = partInterval("2026-10-04", "evening", AREA.timezone);
+    const times = r.options.flatMap((o) => o.availableTimes);
+    expect(times.length).toBeGreaterThan(0);
+    for (const t of times) {
+      expect(t.start >= evening.start && t.end <= evening.end).toBe(true);
+    }
   });
 
   test("reports progress through the stages", async () => {
@@ -313,7 +305,7 @@ describe("planEvent filter modes", () => {
   });
 
   test("budget as a preference keeps pricey places below the ones within budget", async () => {
-    const poor = user({ budget: 10 }); // price level 1 at most
+    const poor = user({ budgetCents: 1000 }); // price level 1 at most
     const hard = await planEvent(
       request([poor], "dinner", { filterModes: modes({ budget: "hard" }) }),
       deps(),
@@ -379,7 +371,8 @@ describe("planEvent filter modes", () => {
       {
         text: "dinner",
         group: { members: [user()] },
-        location: toronto,
+        areaId: AREA.id,
+        ...WINDOW,
       } as never,
       deps(),
     );
@@ -387,7 +380,7 @@ describe("planEvent filter modes", () => {
   });
 });
 
-describe("planEvent with a when and a budget override", () => {
+describe("planEvent with a time filter and a budget override", () => {
   // NOW is Saturday 2026-10-03 11:00 local. Sunday is 2026-10-04.
   const weekdayOf = (iso: string) =>
     new Intl.DateTimeFormat("en-US", {
@@ -397,7 +390,7 @@ describe("planEvent with a when and a budget override", () => {
 
   test("limits the times offered to the days asked for", async () => {
     const r = await planEvent(
-      request([user()], "ramen", { when: { days: ["sunday"] } }),
+      request([user()], "ramen", { timeFilter: { days: ["sunday"] } }),
       deps(),
     );
     if (r.status !== "ok") throw new Error("expected ok");
@@ -408,14 +401,11 @@ describe("planEvent with a when and a budget override", () => {
   });
 
   test("a day with nobody free gives a no-match that says so", async () => {
-    // Both Sundays in the two-week search are blocked for one member.
-    const blocked = [
-      { start: "2026-10-04T00:00:00Z", end: "2026-10-05T12:00:00Z" },
-      { start: "2026-10-11T00:00:00Z", end: "2026-10-12T12:00:00Z" },
-    ];
+    // Both Sundays in the two-week window are busy for one member.
+    const busy = busyAllDay(["2026-10-04", "2026-10-11"]);
     const r = await planEvent(
-      request([user({ unavailable: blocked })], "ramen", {
-        when: { days: ["sunday"] },
+      request([user({ busy })], "ramen", {
+        timeFilter: { days: ["sunday"] },
       }),
       deps(),
     );
@@ -426,7 +416,7 @@ describe("planEvent with a when and a budget override", () => {
 
   test("mornings are offered when asked for, even though the default starts at 11:00", async () => {
     const r = await planEvent(
-      request([user()], "ramen", { when: { partsOfDay: ["morning"] } }),
+      request([user()], "ramen", { timeFilter: { partsOfDay: ["morning"] } }),
       deps(),
     );
     // Restaurants open at 11:00 or later, so a 2h morning slot starting at 8-10 is closed;
@@ -435,11 +425,11 @@ describe("planEvent with a when and a budget override", () => {
   });
 
   test("the budget override replaces the lowest member budget", async () => {
-    const poor = user({ budget: 10 });
+    const poor = user({ budgetCents: 1000 });
     const hard = (extra: Partial<PlanRequest>) =>
       planEvent(request([poor], "dinner", extra), deps(), { n: 8 });
     const base = await hard({});
-    const raised = await hard({ budgetPerPerson: 100 });
+    const raised = await hard({ budgetCents: 10_000 });
     if (base.status !== "ok" || raised.status !== "ok")
       throw new Error("expected ok");
     const max = (r: typeof base) =>
@@ -457,7 +447,7 @@ describe("planEvent when must-haves leave few places", () => {
         ["fake-1", "fake-2", "fake-5"].includes(c.id),
       ),
   };
-  const poor = user({ budget: 10 }); // price level 1 at most
+  const poor = user({ budgetCents: 1000 }); // price level 1 at most
 
   test("returns the places that fit, with a notice saying why there are fewer than asked for", async () => {
     const r = await planEvent(request([poor]), deps({}, three), { n: 3 });
@@ -556,7 +546,7 @@ describe("planEvent guards against bad model output", () => {
     // fake-5 (price level 4) is over a low budget, so it is not in the filtered set.
     await expect(
       planEvent(
-        request([user({ budget: 10 })]),
+        request([user({ budgetCents: 1000 })]),
         deps({
           rank: () => ({
             picks: [{ candidateId: "fake-5", rationale: "Fancy" }],

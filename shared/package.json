@@ -5,12 +5,11 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
-    "format": "prettier --write ."
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint ."
   },
   "dependencies": {
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   }
 }

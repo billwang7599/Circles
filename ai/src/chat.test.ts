@@ -1,30 +1,23 @@
-import { PlanRequestSchema, type PlanRequest } from "@circles/shared";
+import { areaById } from "@circles/shared";
+import { PlanRequestSchema, type PlanRequest } from "./types.ts";
 import { describe, expect, test } from "vitest";
-import {
-  applyPatch,
-  changePlan,
-  editsToPatch,
-  effectiveBudget,
-} from "./chat.ts";
+import { applyPatch, changePlan, editsToPatch } from "./chat.ts";
+import { effectiveBudgetCents } from "./constraints.ts";
 import { createFakeLlmModel } from "./devFakes.ts";
 import { LlmClient } from "./llm.ts";
 import { PlannerError } from "./validated.ts";
 
-const toronto = {
-  name: "Toronto",
-  lat: 43.6532,
-  lng: -79.3832,
-  timezone: "America/Toronto",
-};
 const request: PlanRequest = PlanRequestSchema.parse({
   text: "buffet",
   group: {
     members: [
-      { id: "a", name: "A", location: toronto, budget: 20, unavailable: [] },
-      { id: "b", name: "B", location: toronto, budget: 40, unavailable: [] },
+      { id: "a", name: "A", budgetCents: 2000, busy: [], preferences: [] },
+      { id: "b", name: "B", budgetCents: 4000, busy: [], preferences: [] },
     ],
   },
-  location: toronto,
+  areaId: "uptown",
+  windowStart: "2026-10-03",
+  windowEnd: "2026-10-09",
   radiusKm: 15,
 });
 const llm = (interpret?: (prompt: string) => unknown) =>
@@ -46,10 +39,10 @@ describe("applyPatch", () => {
   test("null fields and values that equal the current ones are ignored", () => {
     const r = applyPatch(request, {
       query: "buffet",
-      budgetPerPerson: undefined,
+      budgetCents: undefined,
       radiusKm: 15,
-      cityId: "toronto",
-      when: undefined,
+      areaId: "uptown",
+      timeFilter: undefined,
       filterModes: { budget: "hard" },
     });
     expect(r.changes).toEqual([]);
@@ -57,9 +50,9 @@ describe("applyPatch", () => {
 
   test("sets the days and the parts of the day", () => {
     const r = applyPatch(request, {
-      when: { days: ["sunday"], partsOfDay: ["evening"] },
+      timeFilter: { days: ["sunday"], partsOfDay: ["evening"] },
     });
-    expect(r.request.when).toEqual({
+    expect(r.request.timeFilter).toEqual({
       days: ["sunday"],
       partsOfDay: ["evening"],
     });
@@ -68,77 +61,81 @@ describe("applyPatch", () => {
 
   test("changing only the days keeps the parts of the day", () => {
     const base = applyPatch(request, {
-      when: { days: ["sunday"], partsOfDay: ["evening"] },
+      timeFilter: { days: ["sunday"], partsOfDay: ["evening"] },
     }).request;
-    const r = applyPatch(base, { when: { days: ["saturday"] } });
-    expect(r.request.when).toEqual({
+    const r = applyPatch(base, { timeFilter: { days: ["saturday"] } });
+    expect(r.request.timeFilter).toEqual({
       days: ["saturday"],
       partsOfDay: ["evening"],
     });
   });
 
-  test("only an explicit clearWhen removes the limit", () => {
-    const base = applyPatch(request, { when: { days: ["sunday"] } }).request;
-    const r = applyPatch(base, { clearWhen: true });
-    expect(r.request.when).toBeUndefined();
+  test("only an explicit clear removes the limit", () => {
+    const base = applyPatch(request, {
+      timeFilter: { days: ["sunday"] },
+    }).request;
+    const r = applyPatch(base, { clearTimeFilter: true });
+    expect(r.request.timeFilter).toBeUndefined();
     expect(r.changes).toEqual(["When: any time"]);
   });
 
   test("empty lists from a model do not clear an existing limit", () => {
-    const base = applyPatch(request, { when: { days: ["sunday"] } }).request;
-    const r = applyPatch(base, { when: { days: [], partsOfDay: [] } });
-    expect(r.request.when).toEqual({ days: ["sunday"], partsOfDay: [] });
+    const base = applyPatch(request, {
+      timeFilter: { days: ["sunday"] },
+    }).request;
+    const r = applyPatch(base, { timeFilter: { days: [], partsOfDay: [] } });
+    expect(r.request.timeFilter).toEqual({ days: ["sunday"], partsOfDay: [] });
     expect(r.changes).toEqual([]);
   });
 
-  test("a day asked for wins over a stray clearWhen", () => {
+  test("a day asked for wins over a stray clear", () => {
     const r = applyPatch(request, {
-      clearWhen: true,
-      when: { days: ["tomorrow"] },
+      clearTimeFilter: true,
+      timeFilter: { days: ["tomorrow"] },
     });
-    expect(r.request.when?.days).toEqual(["tomorrow"]);
+    expect(r.request.timeFilter?.days).toEqual(["tomorrow"]);
   });
 
   test("the budget override replaces the lowest member budget", () => {
-    expect(effectiveBudget(request)).toBe(20);
-    const r = applyPatch(request, { budgetPerPerson: 35 });
-    expect(r.request.budgetPerPerson).toBe(35);
-    expect(effectiveBudget(r.request)).toBe(35);
-    expect(r.changes).toEqual(["Budget: $35 per person, was $20"]);
+    expect(effectiveBudgetCents(request)).toBe(2000);
+    const r = applyPatch(request, { budgetCents: 3550 });
+    expect(r.request.budgetCents).toBe(3550);
+    expect(effectiveBudgetCents(r.request)).toBe(3550);
+    expect(r.changes).toEqual(["Budget: $35.50 per person, was $20"]);
   });
 
   test("radius, location and filter modes", () => {
     const r = applyPatch(request, {
       radiusKm: 25,
-      cityId: "vancouver",
+      areaId: "kitchener",
       filterModes: { budget: "prefer", area: "hard" },
     });
     expect(r.request.radiusKm).toBe(25);
-    expect(r.request.location.name).toBe("Vancouver");
+    expect(r.request.areaId).toBe("kitchener");
     expect(r.request.filterModes.budget).toBe("prefer");
     expect(r.request.filterModes.area).toBe("hard");
     expect(r.changes).toEqual([
       "Radius: 25 km, was 15 km",
-      "Location: Vancouver, was Toronto",
+      `Location: ${areaById("kitchener").name}, was ${areaById("uptown").name}`,
       "Budget is now a preference",
       "Location is now a must-have",
     ]);
   });
 
-  test("an unknown city is ignored, not invented", () => {
-    const r = applyPatch(request, { cityId: "atlantis" });
+  test("an unknown area is ignored, not invented", () => {
+    const r = applyPatch(request, { areaId: "atlantis" });
     expect(r.changes).toEqual([]);
-    expect(r.request.location.name).toBe("Toronto");
+    expect(r.request.areaId).toBe("uptown");
   });
 
   test("does not modify the plan it was given", () => {
     const before = structuredClone(request);
-    applyPatch(request, { query: "x", budgetPerPerson: 99, radiusKm: 5 });
+    applyPatch(request, { query: "x", budgetCents: 9900, radiusKm: 5 });
     expect(request).toEqual(before);
   });
 
   test("an out-of-range value fails instead of producing a bad plan", () => {
-    expect(() => applyPatch(request, { budgetPerPerson: -5 })).toThrow();
+    expect(() => applyPatch(request, { budgetCents: -500 })).toThrow();
   });
 });
 
@@ -150,8 +147,8 @@ describe("changePlan with the fake model", () => {
       llm(),
     );
     expect(r.request.text).toBe("hotpot");
-    expect(r.request.when?.days).toEqual(["sunday"]);
-    expect(r.request.budgetPerPerson).toBe(30); // 20 * 1.5
+    expect(r.request.timeFilter?.days).toEqual(["sunday"]);
+    expect(r.request.budgetCents).toBe(3000); // $20 * 1.5
     expect(r.changes).toHaveLength(3);
   });
 
@@ -167,15 +164,15 @@ describe("changePlan with the fake model", () => {
     ]);
   });
 
-  test("a named amount, a radius and a city", async () => {
+  test("a named amount, a radius and an area", async () => {
     const r = await changePlan(
       request,
-      "find it in Vancouver, within 30 km, budget of 45",
+      `find it in ${areaById("kitchener").name}, within 30 km, budget of 45`,
       llm(),
     );
-    expect(r.request.budgetPerPerson).toBe(45);
+    expect(r.request.budgetCents).toBe(4500);
     expect(r.request.radiusKm).toBe(30);
-    expect(r.request.location.name).toBe("Vancouver");
+    expect(r.request.areaId).toBe("kitchener");
   });
 
   test("making a filter a preference", async () => {
@@ -232,25 +229,25 @@ describe("editsToPatch", () => {
         e("partsOfDay", "evening"),
         e("budgetPerPerson", "$30"),
         e("radiusKm", "25"),
-        e("cityId", "Vancouver"),
+        e("areaId", "Kitchener"),
         e("budgetMode", "prefer"),
         e("areaMode", "hard"),
       ],
     });
     expect(patch).toEqual({
       query: "hotpot",
-      when: { days: ["sunday"], partsOfDay: ["evening"] },
-      budgetPerPerson: 30,
+      timeFilter: { days: ["sunday"], partsOfDay: ["evening"] },
+      budgetCents: 3000,
       radiusKm: 25,
-      cityId: "vancouver",
+      areaId: "kitchener",
       filterModes: { budget: "prefer", area: "hard" },
     });
   });
 
   test("several days become one list", () => {
     expect(
-      editsToPatch({ edits: [e("days", "saturday"), e("days", "sunday")] }).when
-        ?.days,
+      editsToPatch({ edits: [e("days", "saturday"), e("days", "sunday")] })
+        .timeFilter?.days,
     ).toEqual(["saturday", "sunday"]);
   });
 

@@ -1,9 +1,5 @@
-import type {
-  Candidate,
-  FilterModes,
-  SearchFields,
-  TimeWindow,
-} from "@circles/shared";
+import type { Interval } from "@circles/shared";
+import type { Candidate, FilterModes, SearchFields } from "./types.ts";
 import { describe, expect, test } from "vitest";
 import { toSlot } from "./availability.ts";
 import {
@@ -30,7 +26,7 @@ const fields = (over: Partial<SearchFields> = {}): SearchFields => ({
 // 2026-10-03 is a Saturday. America/New_York is UTC-4 then, so 22:00Z = 18:00 local.
 const SAT = 6 * 1440;
 const tz = "America/New_York";
-const slotAt = (w: TimeWindow) => [toSlot(w, tz)];
+const slotAt = (w: Interval) => [toSlot(w, tz)];
 const evening = { start: "2026-10-03T22:00:00Z", end: "2026-10-04T00:00:00Z" }; // 18:00-20:00 local
 const open = (openH: number, closeH: number) => [
   { openMin: SAT + openH * 60, closeMin: SAT + closeH * 60 },

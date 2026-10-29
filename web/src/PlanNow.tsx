@@ -1,14 +1,12 @@
 import {
-  CITIES,
-  DEFAULT_RADIUS_KM,
   MAX_RADIUS_KM,
-  cityLocation,
   type FilterModes,
   type FilterName,
+  type Member,
   type PlanJob,
   type PlanRequest,
-  type User,
-} from "@circles/shared";
+} from "@circles/ai";
+import { AREAS, When, areaById, windowFor, type AreaId } from "@circles/shared";
 import { useEffect, useState } from "react";
 import { PlanOutcome } from "./PlanOutcome";
 import type { SavedOutcome, SavedPlan } from "./savedPlan";
@@ -67,6 +65,12 @@ const FILTER_ROWS: { name: FilterName; label: string; detail: string }[] = [
   },
 ];
 
+const WHEN_LABELS: Record<When, string> = {
+  today: "Today",
+  week: "This week",
+  twoWeeks: "Next two weeks",
+};
+
 const DEFAULT_MODES: FilterModes = {
   budget: "hard",
   openHours: "hard",
@@ -79,7 +83,7 @@ export function PlanNow({
   onSave,
   onClose,
 }: {
-  users: User[];
+  users: Member[];
   onSave: (plan: SavedPlan) => void;
   onClose: () => void;
 }) {
@@ -153,21 +157,17 @@ function PlanForm({
   onSave,
   onBack,
 }: {
-  users: User[];
+  users: Member[];
   onSave: (plan: SavedPlan) => void;
   onBack: () => void;
 }) {
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  // Defaults to where whoever is making the plan is. Later this is their live location.
-  const [plannerId, setPlannerId] = useState(users[0]!.id);
-  const planner = users.find((u) => u.id === plannerId) ?? users[0]!;
-  const homeCity = (u: User) =>
-    CITIES.find((c) => c.name === u.location.name) ?? CITIES[0]!;
-  const [cityId, setCityId] = useState(homeCity(planner).id);
-  const [radius, setRadius] = useState(String(DEFAULT_RADIUS_KM));
+  const [areaId, setAreaId] = useState<AreaId>(AREAS[0]!.id);
+  const area = areaById(areaId);
+  const [radius, setRadius] = useState(String(area.radiusKm));
+  const [when, setWhen] = useState<When>("week");
   const [modes, setModes] = useState<FilterModes>(DEFAULT_MODES);
-  const city = CITIES.find((c) => c.id === cityId)!;
   const [started, setStarted] = useState<SavedOutcome | null>(null);
 
   async function submit(e: React.FormEvent) {
@@ -178,7 +178,8 @@ function PlanForm({
     const params: PlanRequest = {
       text: request,
       group: { members: users },
-      location: cityLocation(city),
+      areaId,
+      ...windowFor(when, area.timezone, new Date()),
       radiusKm: Number(radius),
       filterModes: modes,
     };
@@ -212,8 +213,8 @@ function PlanForm({
       id,
       createdAt: new Date().toISOString(),
       request,
-      where: `${city.name}, ${radius} km`,
-      timezone: city.timezone,
+      where: `${area.name}, ${radius} km`,
+      timezone: area.timezone,
       members: users.length,
       outcome,
       params,
@@ -240,18 +241,22 @@ function PlanForm({
       </label>
 
       <fieldset>
-        <legend className="text-sm font-medium">Where</legend>
+        <legend className="text-sm font-medium">Where and when</legend>
         <div className="mt-1.5 grid grid-cols-[1fr_6.5rem] gap-3">
           <label className="block">
-            <span className="text-xs text-ink-soft">Search location</span>
+            <span className="text-xs text-ink-soft">Area</span>
             <select
               className={`${field} mt-1`}
-              value={cityId}
-              onChange={(e) => setCityId(e.target.value)}
+              value={areaId}
+              onChange={(e) => {
+                const next = areaById(e.target.value);
+                setAreaId(next.id);
+                setRadius(String(next.radiusKm));
+              }}
             >
-              {CITIES.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
+              {AREAS.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
                 </option>
               ))}
             </select>
@@ -269,21 +274,15 @@ function PlanForm({
           </label>
         </div>
         <label className="mt-3 block">
-          <span className="text-xs text-ink-soft">
-            Planning as. Their location sets the default.
-          </span>
+          <span className="text-xs text-ink-soft">When</span>
           <select
             className={`${field} mt-1`}
-            value={plannerId}
-            onChange={(e) => {
-              setPlannerId(e.target.value);
-              const next = users.find((u) => u.id === e.target.value);
-              if (next) setCityId(homeCity(next).id);
-            }}
+            value={when}
+            onChange={(e) => setWhen(When.parse(e.target.value))}
           >
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
+            {When.options.map((w) => (
+              <option key={w} value={w}>
+                {WHEN_LABELS[w]}
               </option>
             ))}
           </select>

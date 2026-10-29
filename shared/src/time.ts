@@ -1,83 +1,23 @@
-// Time conventions: every instant is an ISO 8601 UTC string ending in "Z".
-// Intervals are half-open, [start, end). Local-clock concepts (opening hours,
-// "Saturday evening") use an IANA timezone passed alongside, never a bare offset.
-import type { TimeWindow } from "./types/window.ts";
+import { z } from "zod";
 
-export const WEEK_MIN = 7 * 24 * 60;
+export const When = z.enum(["today", "week", "twoWeeks"]);
+export type When = z.infer<typeof When>;
 
-const UTC_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z$/;
+export const Part = z.enum(["morning", "afternoon", "evening"]);
+export type Part = z.infer<typeof Part>;
 
-/** Parse a UTC instant. Throws on anything not ending in "Z" or not a real date. */
-export function parseInstant(iso: string): number {
-  const ms = UTC_ISO.test(iso) ? Date.parse(iso) : NaN;
-  if (Number.isNaN(ms)) throw new Error(`Not a UTC ISO 8601 instant: ${iso}`);
-  return ms;
-}
+export type Interval = { start: string; end: string };
 
-/** Build a validated half-open interval. Throws if end is not after start. */
-export function makeInterval(start: string, end: string): TimeWindow {
-  if (!(parseInstant(end) > parseInstant(start))) {
-    throw new Error(`Interval end must be after start: ${start} .. ${end}`);
-  }
-  return { start, end };
-}
+const windowDays: Record<When, number> = { today: 0, week: 6, twoWeeks: 13 };
+const partHours: Record<Part, [number, number]> = {
+  morning: [8, 12],
+  afternoon: [12, 17],
+  evening: [17, 23],
+};
 
-/** Half-open overlap: touching intervals do not overlap. */
-export function overlaps(a: TimeWindow, b: TimeWindow): boolean {
-  return (
-    parseInstant(a.start) < parseInstant(b.end) &&
-    parseInstant(b.start) < parseInstant(a.end)
-  );
-}
-
-/** Overlap of two intervals, or undefined if they don't overlap. */
-export function intersect(
-  a: TimeWindow,
-  b: TimeWindow,
-): TimeWindow | undefined {
-  if (!overlaps(a, b)) return undefined;
-  const start = Math.max(parseInstant(a.start), parseInstant(b.start));
-  const end = Math.min(parseInstant(a.end), parseInstant(b.end));
-  return {
-    start: new Date(start).toISOString(),
-    end: new Date(end).toISOString(),
-  };
-}
-
-/** Intersection of two sets of intervals (e.g. two members' free time). */
-export function intersectAll(a: TimeWindow[], b: TimeWindow[]): TimeWindow[] {
-  return a.flatMap((x) => b.flatMap((y) => intersect(x, y) ?? []));
-}
-
-export function isValidTimeZone(timeZone: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Minutes from Sunday 00:00 of the instant, as read in the given IANA zone. */
-export function weekMinutes(iso: string, timeZone: string): number {
+function wallClockAsUtc(date: Date, timezone: string): number {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(parseInstant(iso)));
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(
-    get("weekday"),
-  );
-  return day * 1440 + Number(get("hour")) * 60 + Number(get("minute"));
-}
-
-/** How far the zone is ahead of UTC at the given instant, in ms. */
-function zoneOffsetMs(utcMs: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
+    timeZone: timezone,
     hourCycle: "h23",
     year: "numeric",
     month: "2-digit",
@@ -85,74 +25,90 @@ function zoneOffsetMs(utcMs: number, timeZone: string): number {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-  }).formatToParts(new Date(utcMs));
-  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
-  const asUtc = Date.UTC(
-    get("year"),
-    get("month") - 1,
-    get("day"),
-    get("hour"),
-    get("minute"),
-    get("second"),
+  }).formatToParts(date);
+  const field = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((p) => p.type === type)?.value);
+  return Date.UTC(
+    field("year"),
+    field("month") - 1,
+    field("day"),
+    field("hour"),
+    field("minute"),
+    field("second"),
   );
-  return asUtc - Math.floor(utcMs / 1000) * 1000;
 }
 
-/**
- * Turn a wall-clock time in a zone, such as "2026-10-03T18:00" entered by someone in
- * Toronto, into the UTC instant everything else stores. A time that does not exist
- * (spring forward) or happens twice (fall back) resolves to one of its two readings.
- */
-export function zonedToUtc(local: string, timeZone: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(
-    local,
-  );
-  if (!m) throw new Error(`Not a local date-time: ${local}`);
-  const naive = Date.UTC(
-    +m[1]!,
-    +m[2]! - 1,
-    +m[3]!,
-    +m[4]!,
-    +m[5]!,
-    +(m[6] ?? 0),
-  );
-  // Guess with the offset at the naive time, then correct it with the offset at the guess.
-  const guess = naive - zoneOffsetMs(naive, timeZone);
-  return new Date(naive - zoneOffsetMs(guess, timeZone)).toISOString();
+export function localDate(date: Date, timezone: string): string {
+  return new Date(wallClockAsUtc(date, timezone)).toISOString().slice(0, 10);
 }
 
-const iso = (ms: number) => new Date(ms).toISOString();
+export function addDays(date: string, days: number): string {
+  const [year, month, day] = date.split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
+  return new Date(Date.UTC(year, month - 1, day + days))
+    .toISOString()
+    .slice(0, 10);
+}
 
-/** Sort and merge overlapping or touching intervals. */
-export function mergeIntervals(windows: TimeWindow[]): TimeWindow[] {
-  const sorted = windows
-    .map((w) => ({ s: parseInstant(w.start), e: parseInstant(w.end) }))
-    .sort((a, b) => a.s - b.s);
-  const out: { s: number; e: number }[] = [];
-  for (const w of sorted) {
-    const last = out[out.length - 1];
-    if (last && w.s <= last.e) last.e = Math.max(last.e, w.e);
-    else out.push({ ...w });
+function instantOf(date: string, hour: number, timezone: string): Date {
+  const [year, month, day] = date.split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
+  const wall = Date.UTC(year, month - 1, day, hour);
+  let instant = wall;
+  for (let i = 0; i < 2; i++) {
+    instant = wall - (wallClockAsUtc(new Date(instant), timezone) - instant);
   }
-  return out.map((w) => ({ start: iso(w.s), end: iso(w.e) }));
+  return new Date(instant);
 }
 
-/** The parts of `range` not covered by any of `blocks`. */
+export function windowFor(
+  when: When,
+  timezone: string,
+  now: Date,
+): { windowStart: string; windowEnd: string } {
+  const windowStart = localDate(now, timezone);
+  return { windowStart, windowEnd: addDays(windowStart, windowDays[when]) };
+}
+
+export function datesIn(windowStart: string, windowEnd: string): string[] {
+  const dates: string[] = [];
+  for (let date = windowStart; date <= windowEnd; date = addDays(date, 1)) {
+    dates.push(date);
+  }
+  return dates;
+}
+
+export function partInterval(
+  date: string,
+  part: Part,
+  timezone: string,
+): Interval {
+  const [from, to] = partHours[part];
+  return {
+    start: instantOf(date, from, timezone).toISOString(),
+    end: instantOf(date, to, timezone).toISOString(),
+  };
+}
+
 export function subtractIntervals(
-  range: TimeWindow,
-  blocks: TimeWindow[],
-): TimeWindow[] {
-  const end = parseInstant(range.end);
-  let cursor = parseInstant(range.start);
-  const free: TimeWindow[] = [];
-  for (const b of mergeIntervals(blocks)) {
-    const bs = parseInstant(b.start);
-    const be = parseInstant(b.end);
-    if (be <= cursor) continue;
-    if (bs >= end) break;
-    if (bs > cursor) free.push({ start: iso(cursor), end: iso(bs) });
-    cursor = Math.max(cursor, be);
-  }
-  if (cursor < end) free.push({ start: iso(cursor), end: iso(end) });
-  return free;
+  windows: Interval[],
+  busy: Interval[],
+): Interval[] {
+  return busy.reduce(
+    (free, b) =>
+      free.flatMap(({ start, end }) => {
+        if (b.end <= start || b.start >= end) return [{ start, end }];
+        const kept: Interval[] = [];
+        if (b.start > start) kept.push({ start, end: b.start });
+        if (b.end < end) kept.push({ start: b.end, end });
+        return kept;
+      }),
+    windows,
+  );
 }

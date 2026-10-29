@@ -4,8 +4,8 @@ import type {
   FilterName,
   LatLng,
   SearchFields,
-} from "@circles/shared";
-import { FILTER_NAMES } from "@circles/shared";
+} from "./types.ts";
+import { FILTER_NAMES } from "./types.ts";
 import { openCovers } from "./availability.ts";
 
 export type Filter = (c: Candidate, f: SearchFields) => boolean;

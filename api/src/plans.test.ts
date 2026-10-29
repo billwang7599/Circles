@@ -1,166 +1,115 @@
 import {
-  FakeRestaurantClient,
-  LlmClient,
-  createFakeLlmModel,
-  type PlanDeps,
-  type RestaurantClient,
-} from "@circles/ai";
-import type { PlanJob, PlanRequest } from "@circles/shared";
-import { describe, expect, test } from "vitest";
-import { PlanStore } from "./plans.ts";
+  datesIn,
+  type MembershipResponse,
+  type PlanView,
+  type RegistrationInput,
+} from "@circles/shared";
+import { beforeAll, expect, test } from "vitest";
+import { createApp } from "./app.ts";
+import { testDb } from "./testDb.ts";
 
-const toronto = {
-  name: "Toronto",
-  lat: 43.6532,
-  lng: -79.3832,
-  timezone: "America/Toronto",
-};
+let app: ReturnType<typeof createApp>;
+let circleId: string;
+let nicky: string;
+let bill: string;
 
-const request: PlanRequest = {
-  text: "ramen",
-  location: toronto,
-  radiusKm: 15,
-  filterModes: {
-    budget: "hard",
-    openHours: "hard",
-    partySize: "hard",
-    area: "prefer",
-  },
-  group: {
-    members: [
-      {
-        id: "u",
-        name: "U",
-        location: {
-          name: "Toronto",
-          lat: 43.6532,
-          lng: -79.3832,
-          timezone: "America/Toronto",
-        },
-        budget: 40,
-        unavailable: [],
-      },
-    ],
-  },
-};
-
-const fakeDeps = (
-  restaurants: RestaurantClient = new FakeRestaurantClient(),
-): PlanDeps => ({
-  llm: new LlmClient(createFakeLlmModel()),
-  restaurants,
-});
-
-/** Resolves with the plan once it finishes. */
-const finished = (store: PlanStore, id: string) =>
-  new Promise<PlanJob>((resolve) => {
-    const done = (j: PlanJob) => {
-      if (j.status === "done" || j.status === "failed") {
-        unsubscribe();
-        resolve(j);
-      }
-    };
-    const unsubscribe = store.subscribe(id, done);
-    const now = store.get(id);
-    if (now) done(now);
-  });
-
-/** A restaurant client that waits for release(), to hold plans in the running state. */
-function gatedRestaurants() {
-  const inner = new FakeRestaurantClient();
-  let release = () => {};
-  const gate = new Promise<void>((r) => (release = r));
-  let started = 0;
-  const client: RestaurantClient = {
-    search: async (q) => {
-      started++;
-      await gate;
-      return inner.search(q);
+function call(method: string, path: string, token?: string, data?: unknown) {
+  return app.request(path, {
+    method,
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-  };
-  return { client, release: () => release(), started: () => started };
+    body: data === undefined ? undefined : JSON.stringify(data),
+  });
 }
 
-describe("PlanStore", () => {
-  test("submit returns a pending plan immediately, which later finishes", async () => {
-    const store = new PlanStore({ deps: fakeDeps() });
-    const job = store.submit(request);
-    expect(job.status).toBe("pending");
-    const final = await finished(store, job.id);
-    expect(final.status).toBe("done");
-    expect(
-      final.result?.status === "ok" || final.result?.status === "no_matches",
-    ).toBe(true);
-  });
+async function membership(path: string, data: unknown) {
+  const res = await call("POST", path, undefined, data);
+  expect(res.status).toBe(201);
+  return (await res.json()) as MembershipResponse & { token: string };
+}
 
-  test("subscribers see the pipeline's later stages as it moves", async () => {
-    const store = new PlanStore({ deps: fakeDeps() });
-    const job = store.submit(request);
-    const stages = new Set<string | undefined>();
-    store.subscribe(job.id, (j) => stages.add(j.stage));
-    await finished(store, job.id);
-    // "searching" is reported before a subscriber can attach, so only later stages show.
-    expect(stages).toContain("ranking");
+async function createPlan(when: string) {
+  const res = await call("POST", `/api/circles/${circleId}/plans`, nicky, {
+    title: "Ramen",
+    areaId: "uw",
+    when,
   });
+  expect(res.status).toBe(201);
+  return ((await res.json()) as PlanView).plan;
+}
 
-  test("a failing plan is marked failed with a safe message", async () => {
-    const boom: RestaurantClient = {
-      search: async () => {
-        throw new Error(
-          "secret internal detail https://places.googleapis.com?key=abc",
-        );
+beforeAll(async () => {
+  app = createApp(await testDb());
+  const created = await membership("/api/circles", {
+    name: "Dinner club",
+    memberName: "Nicky",
+  });
+  circleId = created.circle.id;
+  nicky = created.token;
+  bill = (
+    await membership("/api/circles/join", {
+      code: created.circle.joinCode,
+      name: "Bill",
+    })
+  ).token;
+});
+
+test("another member's budget and busy times never appear in the plan body", async () => {
+  const plan = await createPlan("week");
+  const dates = datesIn(plan.windowStart, plan.windowEnd);
+  const inputs: [string, RegistrationInput][] = [
+    [
+      nicky,
+      {
+        attending: true,
+        budgetCents: 12345,
+        busy: [{ date: dates[1], part: "evening" }],
+        preferences: ["ramen"],
       },
-    };
-    const store = new PlanStore({ deps: fakeDeps(boom) });
-    const final = await finished(store, store.submit(request).id);
-    expect(final.status).toBe("failed");
-    expect(final.error).toBe("Planning failed.");
-  });
+    ],
+    [
+      bill,
+      {
+        attending: true,
+        budgetCents: 67890,
+        busy: [{ date: dates[2], part: "morning" }],
+        preferences: ["sushi"],
+      },
+    ],
+  ];
+  const path = `/api/circles/${circleId}/plans/${plan.id}`;
+  for (const [token, input] of inputs) {
+    const res = await call("PUT", `${path}/registration`, token, input);
+    expect(res.status).toBe(200);
+  }
+  for (const [token, own] of inputs) {
+    const other = inputs.find(([t]) => t !== token)![1];
+    const res = await call("GET", path, token);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    const view = JSON.parse(text) as PlanView;
+    expect(view.me.registration).toEqual(own);
+    expect(view.members.every((m) => m.registered && m.attending)).toBe(true);
+    expect(text).not.toMatch(new RegExp(`\\b${other.budgetCents}\\b`));
+    expect(text).not.toContain(other.busy[0].date);
+  }
+});
 
-  test("a plan that runs too long is marked failed", async () => {
-    const gate = gatedRestaurants();
-    const store = new PlanStore({ deps: fakeDeps(gate.client), timeoutMs: 20 });
-    const final = await finished(store, store.submit(request).id);
-    expect(final.status).toBe("failed");
-    expect(final.error).toBe("Planning took too long.");
-    gate.release();
-  });
-
-  test("only maxConcurrent plans run at once; the rest wait their turn", async () => {
-    const gate = gatedRestaurants();
-    const store = new PlanStore({
-      deps: fakeDeps(gate.client),
-      maxConcurrent: 1,
-    });
-    const a = store.submit(request);
-    const b = store.submit(request);
-    await new Promise((r) => setTimeout(r, 30));
-    expect(gate.started()).toBe(1);
-    expect(store.get(b.id)?.status).toBe("pending");
-    gate.release();
-    expect((await finished(store, a.id)).status).toBe("done");
-    expect((await finished(store, b.id)).status).toBe("done");
-  });
-
-  test("unsubscribe stops notifications", async () => {
-    const store = new PlanStore({ deps: fakeDeps() });
-    const job = store.submit(request);
-    let calls = 0;
-    const off = store.subscribe(job.id, () => calls++);
-    off();
-    await finished(store, job.id);
-    expect(calls).toBe(0);
-  });
-
-  test("old finished plans are evicted past the cap", async () => {
-    const store = new PlanStore({ deps: fakeDeps(), maxJobs: 2 });
-    const first = store.submit(request);
-    await finished(store, first.id);
-    const second = store.submit(request);
-    await finished(store, second.id);
-    const third = store.submit(request);
-    await finished(store, third.id);
-    expect(store.get(first.id)).toBeUndefined();
-    expect(store.get(third.id)).toBeDefined();
-  });
+test("a busy date outside the window is 400", async () => {
+  const plan = await createPlan("today");
+  const res = await call(
+    "PUT",
+    `/api/circles/${circleId}/plans/${plan.id}/registration`,
+    bill,
+    {
+      attending: true,
+      budgetCents: 2000,
+      busy: [{ date: "2000-01-01", part: "morning" }],
+      preferences: [],
+    },
+  );
+  expect(res.status).toBe(400);
+  expect(await res.json()).toEqual({ error: "Busy date outside the window" });
 });

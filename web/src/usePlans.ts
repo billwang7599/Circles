@@ -1,4 +1,4 @@
-import type { PlanJob } from "@circles/shared";
+import type { PlanJob } from "@circles/ai";
 import { useEffect, useRef, useState } from "react";
 import { jobToOutcome, type SavedOutcome, type SavedPlan } from "./savedPlan";
 

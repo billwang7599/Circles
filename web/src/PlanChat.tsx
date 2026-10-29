@@ -1,4 +1,5 @@
-import type { PlanJob, PlanRequest } from "@circles/shared";
+import type { PlanJob, PlanRequest } from "@circles/ai";
+import { areaById } from "@circles/shared";
 import { useState } from "react";
 import type { ChatMessage, SavedPlan } from "./savedPlan";
 import { btn, field } from "./ui";
@@ -71,6 +72,7 @@ export function PlanChat({
           ],
         });
       } else {
+        const area = areaById(reply.request.areaId);
         onUpdate({
           chat: [
             ...withUser,
@@ -82,8 +84,8 @@ export function PlanChat({
           ],
           params: reply.request,
           request: reply.request.text,
-          where: `${reply.request.location.name}, ${reply.request.radiusKm} km`,
-          timezone: reply.request.location.timezone,
+          where: `${area.name}, ${reply.request.radiusKm} km`,
+          timezone: area.timezone,
           jobId: reply.job.id,
           outcome: { status: "pending" },
         });

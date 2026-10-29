@@ -1,136 +1,182 @@
 import {
-  PlannerError,
-  RequestLimitError,
-  planEvent,
-  type PlanDeps,
-} from "@circles/ai";
-import type { PlanJob, PlanRequest } from "@circles/shared";
+  areaById,
+  CreatePlan,
+  datesIn,
+  RegistrationInput,
+  windowFor,
+  type AreaId,
+  type BusyPart,
+  type MemberSummary,
+  type PlanStatus,
+  type PlanView,
+  type PreferenceId,
+} from "@circles/shared";
+import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
+import { z } from "zod";
+import { memberOf, type AppEnv } from "./auth.ts";
+import { body } from "./body.ts";
+import type { Db } from "./db.ts";
 
-export interface PlanStoreOptions {
-  deps: PlanDeps;
-  /** Plans running at once. Each costs search requests and model calls. Default 2. */
-  maxConcurrent?: number;
-  /** A plan still running after this long is marked failed. Default 3 minutes. */
-  timeoutMs?: number;
-  /** Finished plans kept in memory. Default 200. */
-  maxJobs?: number;
+type PlanRow = {
+  id: string;
+  circleId: string;
+  title: string;
+  areaId: AreaId;
+  windowStart: string;
+  windowEnd: string;
+  status: PlanStatus;
+  version: number;
+  initiatorId: string;
+  initiatorName: string;
+};
+
+async function loadPlan(
+  db: Db,
+  planId: string,
+  circleId: string,
+): Promise<PlanRow> {
+  const [plan] = z.uuid().safeParse(planId).success
+    ? await db.query<PlanRow>(
+        `select p.id, p.circle_id as "circleId", p.title, p.area_id as "areaId",
+           p.window_start::text as "windowStart", p.window_end::text as "windowEnd",
+           p.status, p.version, m.id as "initiatorId", m.name as "initiatorName"
+         from plans p join members m on m.id = p.initiator_id
+         where p.id = $1 and p.circle_id = $2`,
+        [planId, circleId],
+      )
+    : [];
+  if (!plan) throw new HTTPException(404, { message: "Plan not found" });
+  return plan;
 }
 
-type Listener = (job: PlanJob) => void;
-
-const isFinished = (j: PlanJob) => j.status === "done" || j.status === "failed";
-
-/**
- * Plans that run in the background, in memory. Subscribers are told whenever a plan
- * changes. State is lost on restart; swap this for a durable store later.
- */
-export class PlanStore {
-  private readonly jobs = new Map<string, PlanJob>();
-  private readonly listeners = new Map<string, Set<Listener>>();
-  private readonly queue: { id: string; request: PlanRequest }[] = [];
-  private running = 0;
-  private readonly maxConcurrent: number;
-  private readonly timeoutMs: number;
-  private readonly maxJobs: number;
-
-  constructor(private readonly options: PlanStoreOptions) {
-    this.maxConcurrent = options.maxConcurrent ?? 2;
-    this.timeoutMs = options.timeoutMs ?? 3 * 60_000;
-    this.maxJobs = options.maxJobs ?? 200;
-  }
-
-  /** Queue a plan and return it straight away. The work happens in the background. */
-  submit(request: PlanRequest): PlanJob {
-    const now = new Date().toISOString();
-    const job: PlanJob = {
-      id: crypto.randomUUID(),
-      status: "pending",
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.jobs.set(job.id, job);
-    this.evict();
-    this.queue.push({ id: job.id, request });
-    this.pump();
-    return job;
-  }
-
-  get(id: string): PlanJob | undefined {
-    return this.jobs.get(id);
-  }
-
-  /** Call `listener` on every change to the plan. Returns an unsubscribe function. */
-  subscribe(id: string, listener: Listener): () => void {
-    const set = this.listeners.get(id) ?? new Set();
-    set.add(listener);
-    this.listeners.set(id, set);
-    return () => {
-      set.delete(listener);
-      if (set.size === 0) this.listeners.delete(id);
-    };
-  }
-
-  private update(id: string, patch: Partial<PlanJob>) {
-    const current = this.jobs.get(id);
-    if (!current) return;
-    const next: PlanJob = {
-      ...current,
-      ...patch,
-      updatedAt: new Date().toISOString(),
-    };
-    this.jobs.set(id, next);
-    for (const listener of this.listeners.get(id) ?? []) listener(next);
-  }
-
-  private pump() {
-    while (this.running < this.maxConcurrent && this.queue.length > 0) {
-      const next = this.queue.shift()!;
-      void this.run(next.id, next.request);
-    }
-  }
-
-  private async run(id: string, request: PlanRequest) {
-    this.running++;
-    this.update(id, { status: "running" });
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      // The pipeline can't be cancelled yet, so a timed-out run keeps going unseen.
-      const result = await Promise.race([
-        planEvent(request, this.options.deps, {
-          onProgress: (stage) => this.update(id, { stage }),
-        }),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error("timeout")),
-            this.timeoutMs,
-          );
-        }),
-      ]);
-      this.update(id, { status: "done", result });
-    } catch (e) {
-      console.error(`plan ${id} failed:`, e);
-      this.update(id, { status: "failed", error: publicError(e) });
-    } finally {
-      clearTimeout(timer);
-      this.running--;
-      this.pump();
-    }
-  }
-
-  /** Drop the oldest finished plans once over the cap. */
-  private evict() {
-    for (const [id, job] of this.jobs) {
-      if (this.jobs.size <= this.maxJobs) return;
-      if (isFinished(job)) this.jobs.delete(id);
-    }
-  }
+export async function planView(
+  db: Db,
+  plan: PlanRow,
+  me: MemberSummary,
+): Promise<PlanView> {
+  const members = await db.query<PlanView["members"][number]>(
+    `select m.id, m.name, r.member_id is not null as registered,
+       coalesce(r.attending, false) as attending, null::uuid as "voteOptionId"
+     from members m
+     left join registrations r on r.plan_id = $1 and r.member_id = m.id
+     where m.circle_id = $2 order by m.joined_at`,
+    [plan.id, plan.circleId],
+  );
+  const [mine] = await db.query<{
+    defaultBudgetCents: number | null;
+    defaultPreferences: PreferenceId[];
+    attending: boolean | null;
+    budgetCents: number | null;
+    busy: BusyPart[] | null;
+    preferences: PreferenceId[] | null;
+  }>(
+    `select m.default_budget_cents as "defaultBudgetCents",
+       m.preferences as "defaultPreferences", r.attending,
+       r.budget_cents as "budgetCents", r.busy, r.preferences
+     from members m
+     left join registrations r on r.plan_id = $1 and r.member_id = m.id
+     where m.id = $2`,
+    [plan.id, me.id],
+  );
+  return {
+    plan: {
+      id: plan.id,
+      title: plan.title,
+      area: { id: plan.areaId, name: areaById(plan.areaId).name },
+      windowStart: plan.windowStart,
+      windowEnd: plan.windowEnd,
+      status: plan.status,
+      version: plan.version,
+      initiator: { id: plan.initiatorId, name: plan.initiatorName },
+    },
+    members,
+    me: {
+      registration:
+        mine.attending === null
+          ? undefined
+          : {
+              attending: mine.attending,
+              budgetCents: mine.budgetCents ?? undefined,
+              busy: mine.busy ?? [],
+              preferences: mine.preferences ?? [],
+            },
+      defaults: {
+        budgetCents: mine.defaultBudgetCents ?? undefined,
+        preferences: mine.defaultPreferences,
+      },
+    },
+    options: [],
+    optionsStale: false,
+  };
 }
 
-/** Only messages we wrote ourselves reach the client; anything else may carry internals. */
-function publicError(e: unknown): string {
-  if (e instanceof PlannerError || e instanceof RequestLimitError)
-    return e.message;
-  if (e instanceof Error && e.message === "timeout")
-    return "Planning took too long.";
-  return "Planning failed.";
+export function plans(db: Db) {
+  const app = new Hono<AppEnv>();
+
+  app.post("/circles/:circleId/plans", async (c) => {
+    const circleId = c.req.param("circleId");
+    const me = await memberOf(c, db, circleId);
+    const { title, areaId, when } = await body(c, CreatePlan);
+    const { windowStart, windowEnd } = windowFor(
+      when,
+      areaById(areaId).timezone,
+      new Date(),
+    );
+    const [{ id }] = await db.query<{ id: string }>(
+      `insert into plans (circle_id, initiator_id, title, area_id, window_start, window_end)
+       values ($1, $2, $3, $4, $5, $6) returning id`,
+      [circleId, me.id, title, areaId, windowStart, windowEnd],
+    );
+    const plan = await loadPlan(db, id, circleId);
+    return c.json((await planView(db, plan, me)) satisfies PlanView, 201);
+  });
+
+  app.get("/circles/:circleId/plans/:planId", async (c) => {
+    const { circleId, planId } = c.req.param();
+    const me = await memberOf(c, db, circleId);
+    const plan = await loadPlan(db, planId, circleId);
+    return c.json((await planView(db, plan, me)) satisfies PlanView);
+  });
+
+  app.put("/circles/:circleId/plans/:planId/registration", async (c) => {
+    const { circleId, planId } = c.req.param();
+    const me = await memberOf(c, db, circleId);
+    const input = await body(c, RegistrationInput);
+    const plan = await loadPlan(db, planId, circleId);
+    const dates = new Set(datesIn(plan.windowStart, plan.windowEnd));
+    if (input.busy.some((b) => !dates.has(b.date)))
+      throw new HTTPException(400, {
+        message: "Busy date outside the window",
+      });
+    const [bumped] = await db.query<{ version: number }>(
+      "update plans set version = version + 1 where id = $1 and status = 'open' returning version",
+      [plan.id],
+    );
+    if (!bumped) throw new HTTPException(409, { message: "Plan is locked" });
+    await db.query(
+      `insert into registrations (plan_id, member_id, attending, budget_cents, busy, preferences)
+       values ($1, $2, $3, $4, $5::jsonb, $6)
+       on conflict (plan_id, member_id) do update set
+         attending = excluded.attending, budget_cents = excluded.budget_cents,
+         busy = excluded.busy, preferences = excluded.preferences, updated_at = now()`,
+      [
+        plan.id,
+        me.id,
+        input.attending,
+        input.budgetCents ?? null,
+        JSON.stringify(input.busy),
+        input.preferences,
+      ],
+    );
+    if (input.attending)
+      await db.query(
+        "update members set default_budget_cents = $2, preferences = $3 where id = $1",
+        [me.id, input.budgetCents, input.preferences],
+      );
+    const view = await planView(db, { ...plan, version: bumped.version }, me);
+    return c.json(view satisfies PlanView);
+  });
+
+  return app;
 }

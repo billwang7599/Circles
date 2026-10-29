@@ -1,49 +1,49 @@
-import { CITIES, cityLocation, type User } from "@circles/shared";
+import type { Member } from "@circles/ai";
+import {
+  AREAS,
+  addDays,
+  localDate,
+  type BusyPart,
+  type Part,
+} from "@circles/shared";
 
-const HOUR = 3600_000;
-const toronto = cityLocation(CITIES.find((c) => c.id === "toronto")!);
+const { timezone } = AREAS[0]!;
 
-/** Block starting `days` from today at `hour` local time, lasting `hours`, as UTC instants. */
-function block(days: number, hour: number, hours: number) {
-  const start = new Date();
-  start.setDate(start.getDate() + days);
-  start.setHours(hour, 0, 0, 0);
-  return {
-    start: start.toISOString(),
-    end: new Date(start.getTime() + hours * HOUR).toISOString(),
-  };
+function busy(days: number, ...parts: Part[]): BusyPart[] {
+  const date = addDays(localDate(new Date(), timezone), days);
+  return parts.map((part) => ({ date, part }));
 }
 
 /** Fresh sample users with new ids, for trying the app without typing data in. */
-export function makeSampleUsers(): User[] {
+export function makeSampleUsers(): Member[] {
   return [
     {
       id: crypto.randomUUID(),
       name: "Alex",
-      location: toronto,
-      budget: 20,
-      unavailable: [block(1, 9, 8), block(2, 18, 3)],
+      budgetCents: 2000,
+      busy: [...busy(1, "morning", "afternoon"), ...busy(2, "evening")],
+      preferences: ["ramen"],
     },
     {
       id: crypto.randomUUID(),
       name: "Sam",
-      location: toronto,
-      budget: 40,
-      unavailable: [block(2, 12, 6)],
+      budgetCents: 4000,
+      busy: busy(2, "afternoon"),
+      preferences: ["korean", "bar"],
     },
     {
       id: crypto.randomUUID(),
       name: "Jordan",
-      location: toronto,
-      budget: 30,
-      unavailable: [],
+      budgetCents: 3000,
+      busy: [],
+      preferences: [],
     },
     {
       id: crypto.randomUUID(),
       name: "Riley",
-      location: toronto,
-      budget: 15,
-      unavailable: [block(3, 17, 4)],
+      budgetCents: 1500,
+      busy: busy(3, "evening"),
+      preferences: ["vegetarian"],
     },
   ];
 }

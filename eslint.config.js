@@ -3,10 +3,10 @@ import expo from "eslint-config-expo/flat.js";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  { ignores: ["app/dist/", "app/.expo/"] },
+  { ignores: ["mobile/dist/", "mobile/.expo/", "web/dist/"] },
   tseslint.configs.recommended,
   {
-    files: ["app/**"],
+    files: ["mobile/**"],
     extends: [expo],
     settings: { react: { version: "19" } },
   },

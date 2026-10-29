@@ -1,5 +1,5 @@
-import type { Candidate, LatLng, OpeningPeriod } from "@circles/shared";
-import { WEEK_MIN } from "@circles/shared";
+import type { Candidate, LatLng, OpeningPeriod } from "./types.ts";
+import { WEEK_MIN } from "./time.ts";
 
 export interface RestaurantQuery {
   center: LatLng;

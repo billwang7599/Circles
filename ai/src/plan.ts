@@ -7,13 +7,14 @@ import {
   type PlanRequest,
   type PlanStage,
   type SearchFields,
-} from "@circles/shared";
+} from "./types.ts";
+import { areaById } from "@circles/shared";
 import { z } from "zod";
 import {
   availableTimes,
-  filterSlotsByWhen,
+  filterSlotsByTime,
   generateSlots,
-  slotOptionsForWhen,
+  slotOptionsForTime,
   type SlotOptions,
 } from "./availability.ts";
 import { deriveConstraints } from "./constraints.ts";
@@ -55,14 +56,23 @@ export type PlanResult =
     }
   | { status: "no_matches"; reason: NoMatchReason; message: string };
 
-export { PlannerError } from "./validated.ts";
+export type PlanJobStatus = "pending" | "running" | "done" | "failed";
 
-const SEARCH_DAYS = 14;
-const DAY_MS = 24 * 3600_000;
+export interface PlanJob {
+  id: string;
+  status: PlanJobStatus;
+  stage?: PlanStage;
+  result?: PlanResult;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export { PlannerError } from "./validated.ts";
 
 const NO_MATCH_MESSAGES: Record<NoMatchReason, string> = {
   no_free_time:
-    "No time in the next two weeks when everyone is free for a meal out.",
+    "No time in the plan's dates when everyone is free for a meal out.",
   no_restaurants: "No restaurants were found for that search.",
   budget: "Every place found was over the group's budget.",
   area: "Every place found was outside the search radius.",
@@ -159,34 +169,26 @@ export async function planEvent(
   { n = 3, slots: slotOptions, onProgress }: PlanOptions = {},
 ): Promise<PlanResult> {
   const request = PlanRequestSchema.parse(rawRequest);
-  const { group, location, radiusKm, filterModes, when, budgetPerPerson } =
-    request;
-  const center = { lat: location.lat, lng: location.lng };
+  const { radiusKm, filterModes, timeFilter } = request;
+  const area = areaById(request.areaId);
+  const center = { lat: area.lat, lng: area.lng };
   const now = (deps.now ?? (() => new Date()))();
-  const constraints = deriveConstraints(
-    group,
-    {
-      start: now.toISOString(),
-      end: new Date(now.getTime() + SEARCH_DAYS * DAY_MS).toISOString(),
-    },
-    budgetPerPerson,
-  );
+  const constraints = deriveConstraints(request, now);
 
-  // Opening hours and mealtimes are read in the search location's time zone. Members'
-  // own zones only matter when they enter times, which are stored as UTC.
-  const slots = filterSlotsByWhen(
-    generateSlots(constraints.freeWindows, location.timezone, {
-      ...slotOptionsForWhen(when),
+  // Opening hours and mealtimes are read in the area's time zone, like the busy parts.
+  const slots = filterSlotsByTime(
+    generateSlots(constraints.freeWindows, area.timezone, {
+      ...slotOptionsForTime(timeFilter),
       ...slotOptions,
     }),
-    when,
-    location.timezone,
+    timeFilter,
+    area.timezone,
     now,
   );
   if (slots.length === 0) {
     return noMatches(
       "no_free_time",
-      when
+      timeFilter
         ? "No time on the days you asked for when everyone is free."
         : undefined,
     );

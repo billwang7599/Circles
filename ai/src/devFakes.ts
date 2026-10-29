@@ -1,10 +1,6 @@
+import { AREAS } from "@circles/shared";
 import { MockLanguageModelV4 } from "ai/test";
-import {
-  CITIES,
-  type Candidate,
-  type LatLng,
-  type OpeningPeriod,
-} from "@circles/shared";
+import type { Candidate, LatLng, OpeningPeriod } from "./types.ts";
 import type { RankCandidate } from "./llm.ts";
 import type { RestaurantClient, RestaurantQuery } from "./restaurants.ts";
 
@@ -199,10 +195,10 @@ function fakeInterpret(prompt: string): {
   const km = /(\d+)\s*km/.exec(message);
   if (km) add("radiusKm", km[1]!);
 
-  const city = CITIES.find((c) =>
-    new RegExp(`\\bin ${c.name.toLowerCase()}\\b`).test(message),
+  const area = AREAS.find((a) =>
+    new RegExp(`\\bin ${a.name.toLowerCase()}\\b`).test(message),
   );
-  if (city) add("cityId", city.id);
+  if (area) add("areaId", area.id);
 
   const filterWords: [string, RegExp][] = [
     ["budgetMode", /budget|price/],
