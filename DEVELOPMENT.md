@@ -83,7 +83,8 @@ with `npx prettier --write <files>`.
 
 **Planner test bench**
 `cp web/.env.example web/.env`, then `npm run server -w web` (:3002) and `npm run dev -w web` (Vite proxies `/api` to
-:3002). Without Cloudflare or Places keys it runs on the fake model and fake restaurants.
+:3002). Without `BEDROCK_MODEL_ID` or a Places key it runs on the fake model and fake restaurants; set them as for the
+API below.
 
 **App State**
 Locally everything is on your own machine: app → your API → your Docker Postgres. To test real multi-phone flows, phones must share one API which is what AWS is for.
