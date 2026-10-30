@@ -19,9 +19,13 @@ export type IconName =
   | "lock-open"
   | "map"
   | "map-pin"
+  | "moon"
   | "pencil"
   | "plus"
+  | "search"
   | "star"
+  | "sun"
+  | "sunset"
   | "users"
   | "xmark"
   | "zap";
@@ -39,9 +43,13 @@ const symbols: Record<IconName, SymbolViewProps["name"]> = {
   "lock-open": "lock.open",
   map: "map",
   "map-pin": "mappin.and.ellipse",
+  moon: "moon",
   pencil: "pencil",
   plus: "plus",
+  search: "magnifyingglass",
   star: "star",
+  sun: "sun.max",
+  sunset: "sun.horizon",
   users: "person.2",
   xmark: "xmark",
   zap: "bolt",
@@ -62,9 +70,13 @@ const feather: Record<IconName, React.ComponentProps<typeof Feather>["name"]> =
     "lock-open": "unlock",
     map: "map",
     "map-pin": "map-pin",
+    moon: "moon",
     pencil: "edit-2",
     plus: "plus",
+    search: "search",
     star: "star",
+    sun: "sun",
+    sunset: "sunset",
     users: "users",
     xmark: "x",
     zap: "zap",

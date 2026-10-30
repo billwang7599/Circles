@@ -89,7 +89,7 @@ export default function RootLayout() {
           />
           <Stack.Screen
             name="circles/[circleId]/plans/new"
-            options={{ title: "New plan" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="circles/[circleId]/plans/[planId]/register"
@@ -97,7 +97,7 @@ export default function RootLayout() {
           />
           <Stack.Screen
             name="circles/[circleId]/plans/[planId]/edit"
-            options={{ title: "Edit plan" }}
+            options={{ title: "" }}
           />
         </Stack.Protected>
         <Stack.Protected guard={!signedIn}>

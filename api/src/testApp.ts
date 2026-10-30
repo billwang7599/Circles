@@ -1,8 +1,12 @@
-import type {
-  MembershipResponse,
-  PlanView,
-  PreferenceId,
-  RegistrationInput,
+import {
+  areaById,
+  Part,
+  windowFor,
+  type MembershipResponse,
+  type PlanView,
+  type PreferenceId,
+  type RegistrationInput,
+  type When,
 } from "@circles/shared";
 import { expect } from "vitest";
 import { createApp } from "./app.ts";
@@ -62,11 +66,17 @@ export async function testApp(
     return { circleId: created.circle.id, tokens };
   }
 
-  async function createPlan(circleId: string, token: string, when = "week") {
+  async function createPlan(
+    circleId: string,
+    token: string,
+    when: When = "week",
+    parts: Part[] = Part.options,
+  ) {
     const res = await call("POST", `/api/circles/${circleId}/plans`, token, {
       title: "Ramen",
       areaId: "uw",
-      when,
+      ...windowFor(when, areaById("uw").timezone, new Date()),
+      parts,
     });
     expect(res.status).toBe(201);
     return ((await res.json()) as PlanView).plan;

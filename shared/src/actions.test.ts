@@ -59,6 +59,7 @@ const view = (
     circle: { id: "c", name: "Dinner club" },
     area: { id: "uw", name: "Waterloo" },
     windowStart: "2026-10-27",
+    parts: ["morning", "afternoon", "evening"],
     windowEnd: "2026-10-27",
     phase,
     initiator: { id: "n", name: "Nicky" },

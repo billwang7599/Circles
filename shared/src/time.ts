@@ -8,8 +8,21 @@ export type Part = z.infer<typeof Part>;
 
 export type Interval = { start: string; end: string };
 
+// The quick picks offered next to the calendar when starting a plan.
+export const Preset = z.enum([
+  "today",
+  "tomorrow",
+  "weekend",
+  "week",
+  "twoWeeks",
+]);
+export type Preset = z.infer<typeof Preset>;
+
+// A window ends at most this many days after it starts, so 15 days in all.
+export const maxWindowDays = 14;
+
 const windowDays: Record<When, number> = { today: 0, week: 6, twoWeeks: 13 };
-const partHours: Record<Part, [number, number]> = {
+export const partHours: Record<Part, [number, number]> = {
   morning: [8, 12],
   afternoon: [12, 17],
   evening: [17, 23],
@@ -85,6 +98,57 @@ export function windowFor(
 ): { windowStart: string; windowEnd: string } {
   const windowStart = localDate(now, timezone);
   return { windowStart, windowEnd: addDays(windowStart, windowDays[when]) };
+}
+
+export function presetWindow(
+  preset: Preset,
+  timezone: string,
+  now: Date,
+): { windowStart: string; windowEnd: string } {
+  const today = localDate(now, timezone);
+  const span = (from: number, to: number) => ({
+    windowStart: addDays(today, from),
+    windowEnd: addDays(today, to),
+  });
+  switch (preset) {
+    case "today":
+      return span(0, 0);
+    case "tomorrow":
+      return span(1, 1);
+    case "weekend": {
+      // The coming Saturday and Sunday, or what is left of this weekend.
+      const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
+      if (weekday === 0) return span(0, 0);
+      return span(6 - weekday, 7 - weekday);
+    }
+    case "week":
+      return span(0, 6);
+    case "twoWeeks":
+      return span(0, 13);
+  }
+}
+
+// Days between two YYYY-MM-DD dates, positive when `to` is later.
+export function daysBetween(from: string, to: string): number {
+  return (Date.parse(to) - Date.parse(from)) / 86_400_000;
+}
+
+// Each day's chosen parts as intervals, with touching parts joined so a slot
+// can run from the afternoon into the evening.
+export function partIntervals(
+  date: string,
+  parts: Part[],
+  timezone: string,
+): Interval[] {
+  return Part.options
+    .filter((part) => parts.includes(part))
+    .map((part) => partInterval(date, part, timezone))
+    .reduce<Interval[]>((joined, next) => {
+      const last = joined.at(-1);
+      if (last && last.end === next.start) last.end = next.end;
+      else joined.push({ ...next });
+      return joined;
+    }, []);
 }
 
 export function datesIn(windowStart: string, windowEnd: string): string[] {

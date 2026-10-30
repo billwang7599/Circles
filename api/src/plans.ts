@@ -4,11 +4,12 @@ import {
   datesIn,
   EditPlan,
   RegistrationInput,
+  localDate,
   sameRegistration,
-  windowFor,
   type BusyPart,
   type MemberSummary,
   type OptionView,
+  type Part,
   type PlanPhase,
   type PlanView,
   type PreferenceId,
@@ -27,6 +28,7 @@ type PlanRow = PhaseRow & {
   circleName: string;
   title: string;
   windowStart: string;
+  parts: Part[];
   initiatorId: string;
   initiatorName: string;
   lockedOptionId: string | null;
@@ -49,7 +51,7 @@ export async function loadPlan(
     ? await db.query<Omit<PlanRow, "phase">>(
         `select p.id, p.circle_id as "circleId", c.name as "circleName", p.title,
            p.area_id as "areaId", p.window_start::text as "windowStart",
-           p.window_end::text as "windowEnd", p.status, p.version,
+           p.window_end::text as "windowEnd", p.parts, p.status, p.version,
            m.id as "initiatorId", m.name as "initiatorName",
            p.locked_option_id as "lockedOptionId", p.locked_start as "lockedStart",
            p.locked_end as "lockedEnd", p.options_version as "optionsVersion",
@@ -123,6 +125,7 @@ export async function planView(
       area: { id: plan.areaId, name: areaById(plan.areaId).name },
       windowStart: plan.windowStart,
       windowEnd: plan.windowEnd,
+      parts: plan.parts,
       phase: plan.phase,
       initiator: { id: plan.initiatorId, name: plan.initiatorName },
       locked:
@@ -154,22 +157,30 @@ export async function planView(
   };
 }
 
+// A plan can't start before today in its area, though one already under way
+// keeps its start when edited.
+function assertStartsAhead(input: CreatePlan, keep?: { windowStart: string }) {
+  if (keep && input.windowStart === keep.windowStart) return;
+  const today = localDate(new Date(), areaById(input.areaId).timezone);
+  if (input.windowStart < today)
+    throw new HTTPException(400, {
+      message: "The plan can't start in the past",
+    });
+}
+
 export function plans(db: Db) {
   const app = new Hono<AppEnv>();
 
   app.post("/circles/:circleId/plans", async (c) => {
     const circleId = c.req.param("circleId");
     const me = await memberOf(c, db, circleId);
-    const { title, areaId, when } = await body(c, CreatePlan);
-    const { windowStart, windowEnd } = windowFor(
-      when,
-      areaById(areaId).timezone,
-      new Date(),
-    );
+    const input = await body(c, CreatePlan);
+    assertStartsAhead(input);
+    const { title, areaId, windowStart, windowEnd, parts } = input;
     const [{ id }] = await db.query<{ id: string }>(
-      `insert into plans (circle_id, initiator_id, title, area_id, window_start, window_end)
-       values ($1, $2, $3, $4, $5, $6) returning id`,
-      [circleId, me.id, title, areaId, windowStart, windowEnd],
+      `insert into plans (circle_id, initiator_id, title, area_id, window_start, window_end, parts)
+       values ($1, $2, $3, $4, $5, $6, $7) returning id`,
+      [circleId, me.id, title, areaId, windowStart, windowEnd, parts],
     );
     const plan = await loadPlan(db, id, circleId);
     return c.json((await planView(db, plan, me)) satisfies PlanView, 201);
@@ -192,26 +203,26 @@ export function plans(db: Db) {
       throw new HTTPException(403, {
         message: "Only the initiator can edit this plan",
       });
-    const window = input.when
-      ? windowFor(input.when, areaById(input.areaId).timezone, new Date())
-      : { windowStart: plan.windowStart, windowEnd: plan.windowEnd };
+    assertStartsAhead(input, plan);
     const moved =
       input.areaId !== plan.areaId ||
-      window.windowStart !== plan.windowStart ||
-      window.windowEnd !== plan.windowEnd;
+      input.windowStart !== plan.windowStart ||
+      input.windowEnd !== plan.windowEnd ||
+      input.parts.join() !== plan.parts.join();
     if (!moved && input.title === plan.title)
       return c.json((await planView(db, plan, me)) satisfies PlanView);
     await db.transaction(async (tx) => {
       const [updated] = await tx.query<{ id: string }>(
         `update plans set title = $2, area_id = $3, window_start = $4,
-           window_end = $5, version = version + 1
+           window_end = $5, parts = $6, version = version + 1
          where id = $1 and status = 'open' returning id`,
         [
           plan.id,
           input.title,
           input.areaId,
-          window.windowStart,
-          window.windowEnd,
+          input.windowStart,
+          input.windowEnd,
+          input.parts,
         ],
       );
       if (!updated) throw new HTTPException(409, { message: "Plan is locked" });
@@ -220,10 +231,11 @@ export function plans(db: Db) {
       await tx.query(
         `update registrations r set busy = coalesce(
            (select jsonb_agg(b) from jsonb_array_elements(r.busy) b
-            where (b->>'date')::date between $2::date and $3::date),
+            where (b->>'date')::date between $2::date and $3::date
+              and b->>'part' = any($4)),
            '[]'::jsonb)
          where plan_id = $1`,
-        [plan.id, window.windowStart, window.windowEnd],
+        [plan.id, input.windowStart, input.windowEnd, input.parts],
       );
     });
     const edited = await loadPlan(db, plan.id, circleId);
@@ -240,6 +252,10 @@ export function plans(db: Db) {
     if (input.busy.some((b) => !dates.has(b.date)))
       throw new HTTPException(400, {
         message: "Busy date outside the window",
+      });
+    if (input.busy.some((b) => !plan.parts.includes(b.part)))
+      throw new HTTPException(400, {
+        message: "Busy time outside the plan's times of day",
       });
     // Saving the same answers again changes nothing, so the options stay fresh.
     const [current] = await db.query<{

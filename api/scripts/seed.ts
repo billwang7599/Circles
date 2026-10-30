@@ -1,12 +1,14 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type {
-  AreaId,
-  MembershipResponse,
+import {
+  areaById,
   Part,
-  PlanView,
-  PreferenceId,
-  RegistrationInput,
+  windowFor,
+  type AreaId,
+  type MembershipResponse,
+  type PlanView,
+  type PreferenceId,
+  type RegistrationInput,
 } from "@circles/shared";
 import { Pool } from "pg";
 import { createApp } from "../src/app.ts";
@@ -151,7 +153,11 @@ for (const circle of seeded.length > 0 ? [] : circles) {
     "POST",
     `/api/circles/${created.circle.id}/plans`,
     tokenOf(owner.name),
-    { ...circle.plan, when: "week" },
+    {
+      ...circle.plan,
+      ...windowFor("week", areaById(circle.plan.areaId).timezone, new Date()),
+      parts: Part.options,
+    },
   );
   for (const member of circle.members) {
     if (member.budgetCents === undefined) continue;

@@ -1,5 +1,28 @@
-import type { Interval } from "@circles/shared";
+import { partHours, type Interval, type Part } from "@circles/shared";
 import { useEffect, useState } from "react";
+
+export const partLabels: Record<Part, string> = {
+  morning: "Morning",
+  afternoon: "Afternoon",
+  evening: "Evening",
+};
+
+// An hour of the day, short: "8am", "12pm", "11pm".
+function formatHour(hour: number) {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    timeZone: "UTC",
+  })
+    .format(new Date(Date.UTC(2000, 0, 1, hour)))
+    .replace(/\s/g, "")
+    .toLowerCase();
+}
+
+// The hours a part of the day covers: "5pm–11pm".
+export function formatPartHours(part: Part) {
+  const [from, to] = partHours[part];
+  return `${formatHour(from)}–${formatHour(to)}`;
+}
 
 export function formatDate(date: string, weekday = false) {
   return new Intl.DateTimeFormat(undefined, {
@@ -14,6 +37,13 @@ export function formatWindow(windowStart: string, windowEnd: string) {
   return windowStart === windowEnd
     ? formatDate(windowStart)
     : `${formatDate(windowStart)} to ${formatDate(windowEnd)}`;
+}
+
+// Two YYYY-MM-DD days with their weekdays: "Sat, Nov 1 – Fri, Nov 7".
+export function formatRange(windowStart: string, windowEnd: string) {
+  return windowStart === windowEnd
+    ? formatDay(windowStart)
+    : `${formatDate(windowStart, true)} – ${formatDate(windowEnd, true)}`;
 }
 
 const dayFormat = (timeZone: string) =>
