@@ -1,33 +1,22 @@
 import { describe, expect, test } from "vitest";
 import { createModel } from "./model.ts";
 
+const MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+
 describe("createModel", () => {
-  test("uses the fake model when no credentials are set", () => {
+  test("uses the fake model when BEDROCK_MODEL_ID is not set", () => {
     expect(createModel({}).description).toContain("fake");
   });
-  test("uses Cloudflare Workers AI when both credentials are set", () => {
-    const { model, description } = createModel({
-      CLOUDFLARE_ACCOUNT_ID: "acct",
-      CLOUDFLARE_API_TOKEN: "token",
-    });
-    expect(description).toContain("Cloudflare Workers AI");
-    expect(typeof model).toBe("object");
-    expect((model as { modelId: string }).modelId).toBe(
-      "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-    );
+  test("uses Bedrock when BEDROCK_MODEL_ID is set", () => {
+    const { model, description } = createModel({ BEDROCK_MODEL_ID: MODEL_ID });
+    expect(description).toBe(`Bedrock ${MODEL_ID} (ca-central-1)`);
+    expect((model as { modelId: string }).modelId).toBe(MODEL_ID);
   });
-  test("CLOUDFLARE_MODEL overrides the default model", () => {
-    const { model } = createModel({
-      CLOUDFLARE_ACCOUNT_ID: "a",
-      CLOUDFLARE_API_TOKEN: "t",
-      CLOUDFLARE_MODEL: "@cf/openai/gpt-oss-120b",
+  test("AWS_REGION overrides the default region", () => {
+    const { description } = createModel({
+      BEDROCK_MODEL_ID: MODEL_ID,
+      AWS_REGION: "us-east-1",
     });
-    expect((model as { modelId: string }).modelId).toBe(
-      "@cf/openai/gpt-oss-120b",
-    );
-  });
-  test("one credential without the other is an error", () => {
-    expect(() => createModel({ CLOUDFLARE_ACCOUNT_ID: "a" })).toThrow();
-    expect(() => createModel({ CLOUDFLARE_API_TOKEN: "t" })).toThrow();
+    expect(description).toContain("(us-east-1)");
   });
 });

@@ -1,21 +1,18 @@
-// Compare Cloudflare Workers AI models on the planner's one LLM call: ranking.
-// Usage (from ai/): npx tsx scripts/benchmark-models.ts [model ...]
-// Uses real calls and your Workers AI credits. Reads ai/.env.
+// Compare Bedrock models on the planner's one LLM call: ranking.
+// Usage (from ai/): AWS_PROFILE=circles npx tsx scripts/benchmark-models.ts [model id ...]
+import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
+import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import type { LanguageModel } from "ai";
-import { createWorkersAI } from "workers-ai-provider";
 import {
   FakeRestaurantClient,
   LlmClient,
   type LlmUsage,
 } from "../src/index.ts";
 
-process.loadEnvFile();
-const accountId = process.env.CLOUDFLARE_ACCOUNT_ID!;
-const apiKey = process.env.CLOUDFLARE_API_TOKEN!;
-if (!accountId || !apiKey)
-  throw new Error("Set Cloudflare credentials in ai/.env");
-
-const workersai = createWorkersAI({ accountId, apiKey });
+const bedrock = createAmazonBedrock({
+  region: process.env.AWS_REGION || "ca-central-1",
+  credentialProvider: fromNodeProviderChain(),
+});
 const CALL_TIMEOUT_MS = 90_000;
 
 interface Variant {
@@ -23,47 +20,14 @@ interface Variant {
   make: () => LanguageModel;
 }
 
-const DEFAULTS: Variant[] = [
-  {
-    label: "glm-4.7-flash (default)",
-    make: () => workersai("@cf/zai-org/glm-4.7-flash"),
-  },
-  {
-    label: "glm-4.7-flash (no thinking)",
-    make: () =>
-      workersai("@cf/zai-org/glm-4.7-flash", {
-        reasoning_effort: null,
-        chat_template_kwargs: { enable_thinking: false },
-      }),
-  },
-  {
-    label: "llama-3.1-8b",
-    make: () => workersai("@cf/meta/llama-3.1-8b-instruct-fp8"),
-  },
-  {
-    label: "gemma-4-26b-a4b",
-    make: () => workersai("@cf/google/gemma-4-26b-a4b-it"),
-  },
-  {
-    label: "mistral-small-3.1-24b",
-    make: () => workersai("@cf/mistralai/mistral-small-3.1-24b-instruct"),
-  },
-  {
-    label: "llama-3.3-70b-fast",
-    make: () => workersai("@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
-  },
-  {
-    label: "llama-4-scout-17b",
-    make: () => workersai("@cf/meta/llama-4-scout-17b-16e-instruct"),
-  },
-];
-
-const variants: Variant[] =
+const modelIds =
   process.argv.length > 2
-    ? process.argv
-        .slice(2)
-        .map((m) => ({ label: m, make: () => workersai(m as never) }))
-    : DEFAULTS;
+    ? process.argv.slice(2)
+    : ["us.anthropic.claude-haiku-4-5-20251001-v1:0"];
+const variants: Variant[] = modelIds.map((m) => ({
+  label: m,
+  make: () => bedrock(m),
+}));
 
 const withTimeout = <T>(p: Promise<T>) =>
   Promise.race([
