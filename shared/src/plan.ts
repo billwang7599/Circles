@@ -2,22 +2,38 @@ import { z } from "zod";
 import { AreaId } from "./areas.ts";
 import type { AvatarColor, MemberSummary } from "./circle.ts";
 import { PreferenceId } from "./preferences.ts";
-import { Part, When, type Interval } from "./time.ts";
+import { daysBetween, maxWindowDays, Part, type Interval } from "./time.ts";
 
-export const CreatePlan = z.object({
-  title: z
-    .string()
-    .trim()
-    .min(1, "Enter a title")
-    .max(80, "At most 80 characters"),
-  areaId: AreaId,
-  when: When,
-});
+// Window dates are in the area's time zone, both included.
+export const CreatePlan = z
+  .object({
+    title: z
+      .string()
+      .trim()
+      .min(1, "Enter a title")
+      .max(80, "At most 80 characters"),
+    areaId: AreaId,
+    windowStart: z.iso.date(),
+    windowEnd: z.iso.date(),
+    parts: z.array(Part).min(1, "Pick a time of day"),
+  })
+  .refine((p) => p.windowEnd >= p.windowStart, {
+    message: "The end can't be before the start",
+    path: ["windowEnd"],
+  })
+  .refine((p) => daysBetween(p.windowStart, p.windowEnd) <= maxWindowDays, {
+    message: `At most ${maxWindowDays + 1} days`,
+    path: ["windowEnd"],
+  })
+  // Stored in the day's order, without repeats.
+  .transform((p) => ({
+    ...p,
+    parts: Part.options.filter((part) => p.parts.includes(part)),
+  }));
 export type CreatePlan = z.infer<typeof CreatePlan>;
 
-// Without `when` the plan keeps its current window.
-export const EditPlan = CreatePlan.extend({ when: When.optional() });
-export type EditPlan = z.infer<typeof EditPlan>;
+export const EditPlan = CreatePlan;
+export type EditPlan = CreatePlan;
 
 export const BusyPart = z.object({ date: z.iso.date(), part: Part });
 export type BusyPart = z.infer<typeof BusyPart>;
@@ -114,6 +130,8 @@ export type PlanView = {
     area: { id: AreaId; name: string };
     windowStart: string;
     windowEnd: string;
+    // The parts of each day the plan can happen in.
+    parts: Part[];
     phase: PlanPhase;
     initiator: MemberSummary;
     locked?: { optionId: string; start: string };

@@ -1,23 +1,19 @@
-import { AREAS, EditPlan, When, type AreaId } from "@circles/shared";
+import { areaById, EditPlan, type AreaId, type Part } from "@circles/shared";
 import { useState } from "react";
-import { StyleSheet, View } from "react-native";
-import { formatWindow } from "../dates";
+import { StyleSheet, TextInput, View } from "react-native";
 import { Button } from "../ui/Button";
-import { Chip } from "../ui/Chip";
-import { Field, useIssues } from "../ui/Field";
+import { useIssues } from "../ui/Field";
+import { Screen } from "../ui/Screen";
+import { Section } from "../ui/Section";
 import { Text } from "../ui/Text";
-import { space } from "../ui/theme";
-
-const whenLabels: Record<When, string> = {
-  today: "Today",
-  week: "This week",
-  twoWeeks: "Next two weeks",
-};
+import { font, space, typeScale, useTheme } from "../ui/theme";
+import { DateRangePicker, type DateWindow } from "./DateRangePicker";
+import { LocationPicker } from "./LocationPicker";
+import { PartPicker } from "./PartPicker";
 
 type Props = {
-  initial: { title: string; areaId: AreaId; when?: When };
-  // Offered as a choice that keeps the plan's current dates.
-  currentWindow?: { windowStart: string; windowEnd: string };
+  heading: string;
+  initial: { title: string; areaId: AreaId; parts: Part[] } & DateWindow;
   submitTitle: string;
   pending: boolean;
   error?: string;
@@ -25,79 +21,108 @@ type Props = {
 };
 
 export function PlanForm({
+  heading,
   initial,
-  currentWindow,
   submitTitle,
   pending,
   error,
   onSubmit,
 }: Props) {
+  const { colors } = useTheme();
   const [title, setTitle] = useState(initial.title);
   const [areaId, setAreaId] = useState(initial.areaId);
-  const [when, setWhen] = useState(initial.when);
+  const [window, setWindow] = useState<DateWindow>({
+    windowStart: initial.windowStart,
+    windowEnd: initial.windowEnd,
+  });
+  const [parts, setParts] = useState(initial.parts);
   const { issue, setIssues } = useIssues();
+  const titleError = issue("title");
 
   function submit() {
     if (pending) return;
-    const parsed = EditPlan.safeParse({ title, areaId, when });
+    const parsed = EditPlan.safeParse({ title, areaId, ...window, parts });
     setIssues(parsed.success ? [] : parsed.error.issues);
     if (parsed.success) onSubmit(parsed.data);
   }
 
   return (
-    <View style={styles.fields}>
-      <Field
-        label="What"
-        value={title}
-        onChangeText={setTitle}
-        error={issue("title") ?? error}
-        autoFocus={!currentWindow}
-        returnKeyType="go"
-        onSubmitEditing={submit}
-      />
-      <View style={styles.field}>
-        <Text variant="label">Where</Text>
-        <View style={styles.chips}>
-          {AREAS.map((area) => (
-            <Chip
-              key={area.id}
-              label={area.name}
-              selected={area.id === areaId}
-              onPress={() => setAreaId(area.id)}
+    <Screen
+      sheet={
+        <>
+          <Section title="Where">
+            <LocationPicker
+              value={areaId}
+              onChange={setAreaId}
+              error={issue("areaId")}
             />
-          ))}
-        </View>
+          </Section>
+          <Section title="When">
+            <DateRangePicker
+              value={window}
+              timezone={areaById(areaId).timezone}
+              onChange={setWindow}
+              error={issue("windowEnd") ?? issue("windowStart")}
+            />
+          </Section>
+          <Section title="Time of day">
+            <PartPicker value={parts} onChange={setParts} />
+            {issue("parts") ? (
+              <Text variant="caption" color="danger">
+                {issue("parts")}
+              </Text>
+            ) : null}
+          </Section>
+          <View style={styles.submit}>
+            {error ? <Text color="danger">{error}</Text> : null}
+            <Button title={submitTitle} onPress={submit} loading={pending} />
+          </View>
+        </>
+      }
+    >
+      <View style={styles.what}>
+        <Text variant="headline" style={styles.heading}>
+          {heading}
+        </Text>
+        <TextInput
+          value={title}
+          onChangeText={setTitle}
+          placeholder="What are we doing?"
+          placeholderTextColor={colors.textMuted}
+          accessibilityLabel="What"
+          autoFocus={!initial.title}
+          multiline
+          submitBehavior="blurAndSubmit"
+          returnKeyType="done"
+          maxFontSizeMultiplier={1.2}
+          style={[
+            styles.title,
+            {
+              color: colors.foreground,
+              borderBottomColor: titleError ? colors.danger : colors.border,
+            },
+          ]}
+        />
+        {titleError ? (
+          <Text variant="caption" color="danger">
+            {titleError}
+          </Text>
+        ) : null}
       </View>
-      <View style={styles.field}>
-        <Text variant="label">When</Text>
-        <View style={styles.chips}>
-          {currentWindow ? (
-            <Chip
-              label={formatWindow(
-                currentWindow.windowStart,
-                currentWindow.windowEnd,
-              )}
-              selected={when === undefined}
-              onPress={() => setWhen(undefined)}
-            />
-          ) : null}
-          {When.options.map((option) => (
-            <Chip
-              key={option}
-              label={whenLabels[option]}
-              selected={option === when}
-              onPress={() => setWhen(option)}
-            />
-          ))}
-        </View>
-      </View>
-      <Button title={submitTitle} onPress={submit} loading={pending} />
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  fields: { gap: space.lg },
-  field: { gap: space.sm },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+  what: { gap: space.sm, paddingTop: space.lg },
+  heading: { fontFamily: font.medium },
+  title: {
+    ...typeScale.display,
+    fontSize: 40,
+    lineHeight: 44,
+    letterSpacing: -1.8,
+    paddingVertical: space.sm,
+    borderBottomWidth: 1.5,
+  },
+  submit: { gap: space.sm },
 });

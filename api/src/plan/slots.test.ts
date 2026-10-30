@@ -59,6 +59,28 @@ test.each([
   },
 );
 
+test("free windows only cover the plan's times of day, joining parts that touch", () => {
+  const now = new Date("2026-11-06T12:00:00.000Z");
+  const split = constraintsFor(
+    [nicky, bill],
+    { ...plan, parts: ["morning", "evening"] },
+    now,
+  );
+  expect(split.freeWindows).toEqual([
+    { start: "2026-11-06T13:00:00.000Z", end: "2026-11-06T17:00:00.000Z" },
+    { start: "2026-11-07T22:00:00.000Z", end: "2026-11-08T04:00:00.000Z" },
+  ]);
+  const free: Participant = { budgetCents: 3000, busy: [], preferences: [] };
+  const joined = constraintsFor(
+    [free, free],
+    { ...plan, windowEnd: plan.windowStart, parts: ["afternoon", "evening"] },
+    now,
+  );
+  expect(joined.freeWindows).toEqual([
+    { start: "2026-11-06T17:00:00.000Z", end: "2026-11-07T04:00:00.000Z" },
+  ]);
+});
+
 test("no free window with room for a slot yields none", () => {
   const george: Participant = {
     budgetCents: 3000,

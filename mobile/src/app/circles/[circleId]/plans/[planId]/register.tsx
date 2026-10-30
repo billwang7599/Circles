@@ -1,10 +1,10 @@
 import {
   datesIn,
-  Part,
   PREFERENCES,
   RegistrationInput,
   sameRegistration,
   type BusyPart,
+  type Part,
   type PlanView,
   type PreferenceId,
 } from "@circles/shared";
@@ -13,7 +13,7 @@ import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { isRefusal, usePlan, useSaveRegistration } from "../../../../../api";
 import { confirmAction } from "../../../../../confirm";
-import { formatDate } from "../../../../../dates";
+import { formatDate, partLabels } from "../../../../../dates";
 import { Button } from "../../../../../ui/Button";
 import { Chip } from "../../../../../ui/Chip";
 import { ErrorState } from "../../../../../ui/ErrorState";
@@ -24,12 +24,6 @@ import { MetaItem, ScreenTitle } from "../../../../../ui/ScreenTitle";
 import { StatusBadge } from "../../../../../ui/StatusBadge";
 import { Text } from "../../../../../ui/Text";
 import { radius, size, space, useTheme } from "../../../../../ui/theme";
-
-const partLabels: Record<Part, string> = {
-  morning: "Morning",
-  afternoon: "Afternoon",
-  evening: "Evening",
-};
 
 const cellWidth = 64;
 
@@ -110,8 +104,10 @@ function Form({
     const parsed = RegistrationInput.safeParse({
       attending: true,
       budgetCents: parseDollars(budget),
-      // The window may have moved since the form opened; only dates in it count.
-      busy: busy.filter((b) => dates.includes(b.date)),
+      // The window may have moved since the form opened; only times in it count.
+      busy: busy.filter(
+        (b) => dates.includes(b.date) && view.plan.parts.includes(b.part),
+      ),
       preferences,
     });
     setIssues(parsed.success ? [] : parsed.error.issues);
@@ -171,7 +167,12 @@ function Form({
         />
         <View style={styles.field}>
           <Text variant="label">Busy times</Text>
-          <BusyGrid dates={dates} isBusy={isBusy} onToggle={toggleBusy} />
+          <BusyGrid
+            dates={dates}
+            parts={view.plan.parts}
+            isBusy={isBusy}
+            onToggle={toggleBusy}
+          />
         </View>
         <View style={styles.field}>
           <Text variant="label">Preferences</Text>
@@ -193,10 +194,12 @@ function Form({
 
 function BusyGrid({
   dates,
+  parts,
   isBusy,
   onToggle,
 }: {
   dates: string[];
+  parts: Part[];
   isBusy: (date: string, part: Part) => boolean;
   onToggle: (date: string, part: Part) => void;
 }) {
@@ -205,7 +208,7 @@ function BusyGrid({
     <View style={styles.grid}>
       <View style={styles.gridRow}>
         <View style={styles.day} />
-        {Part.options.map((part) => (
+        {parts.map((part) => (
           <Text
             key={part}
             variant="caption"
@@ -226,7 +229,7 @@ function BusyGrid({
             <Text numberOfLines={2} style={styles.day}>
               {day}
             </Text>
-            {Part.options.map((part) => {
+            {parts.map((part) => {
               const checked = isBusy(date, part);
               return (
                 <Pressable

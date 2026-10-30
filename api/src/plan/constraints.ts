@@ -1,6 +1,8 @@
 import {
   datesIn,
+  Part,
   partInterval,
+  partIntervals,
   PREFERENCES,
   subtractIntervals,
   type BusyPart,
@@ -35,15 +37,19 @@ function priceLevelFor(budgetCents: number): number {
 
 export function constraintsFor(
   participants: Participant[],
-  plan: { windowStart: string; windowEnd: string; timezone: string },
+  plan: {
+    windowStart: string;
+    windowEnd: string;
+    // The parts of each day it can happen in; the whole day when left out.
+    parts?: Part[];
+    timezone: string;
+  },
   now: Date,
 ): Constraints {
   const nowIso = now.toISOString();
+  const parts = plan.parts ?? Part.options;
   const days = datesIn(plan.windowStart, plan.windowEnd)
-    .map((date) => ({
-      start: partInterval(date, "morning", plan.timezone).start,
-      end: partInterval(date, "evening", plan.timezone).end,
-    }))
+    .flatMap((date) => partIntervals(date, parts, plan.timezone))
     .filter((day) => day.end > nowIso)
     .map((day) => ({ ...day, start: day.start > nowIso ? day.start : nowIso }));
   const busy = participants.flatMap((p) =>

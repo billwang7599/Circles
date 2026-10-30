@@ -1,6 +1,13 @@
 import { z } from "zod";
 
-export const AreaId = z.enum(["uw", "uptown", "kitchener"]);
+export const AreaId = z.enum([
+  "uw",
+  "laurier",
+  "uptown",
+  "kitchener",
+  "belmont",
+  "galt",
+]);
 export type AreaId = z.infer<typeof AreaId>;
 
 export type Area = {
@@ -22,6 +29,14 @@ export const AREAS: readonly Area[] = [
     timezone: "America/Toronto",
   },
   {
+    id: "laurier",
+    name: "Wilfrid Laurier University",
+    lat: 43.4738,
+    lng: -80.5275,
+    radiusKm: 2,
+    timezone: "America/Toronto",
+  },
+  {
     id: "uptown",
     name: "Uptown Waterloo",
     lat: 43.4647,
@@ -35,6 +50,22 @@ export const AREAS: readonly Area[] = [
     lat: 43.4516,
     lng: -80.4925,
     radiusKm: 5,
+    timezone: "America/Toronto",
+  },
+  {
+    id: "belmont",
+    name: "Belmont Village",
+    lat: 43.4389,
+    lng: -80.5056,
+    radiusKm: 2,
+    timezone: "America/Toronto",
+  },
+  {
+    id: "galt",
+    name: "Downtown Cambridge",
+    lat: 43.3601,
+    lng: -80.3127,
+    radiusKm: 4,
     timezone: "America/Toronto",
   },
 ];

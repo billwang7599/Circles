@@ -29,7 +29,8 @@ const devHost =
   (scriptUrl ? new URL(scriptUrl).hostname : undefined) ??
   (__DEV__ && Platform.OS === "web" ? window.location.hostname : undefined);
 
-const baseUrl = process.env.EXPO_PUBLIC_API_URL ?? (devHost ? `http://${devHost}:3001` : "");
+const baseUrl =
+  process.env.EXPO_PUBLIC_API_URL ?? (devHost ? `http://${devHost}:3001` : "");
 
 // The server answered with an error, as opposed to not being reachable.
 class ApiError extends Error {

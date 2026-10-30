@@ -1,4 +1,4 @@
-import { areaById, windowFor, type EditPlan } from "@circles/shared";
+import type { EditPlan } from "@circles/shared";
 import { router, useLocalSearchParams } from "expo-router";
 import { ActivityIndicator } from "react-native";
 import { isRefusal, useEditPlan, usePlan } from "../../../../../api";
@@ -29,17 +29,15 @@ export default function Edit() {
       </Screen>
     );
 
-  const { title, area, windowStart, windowEnd } = plan.data.plan;
+  const { title, area, windowStart, windowEnd, parts } = plan.data.plan;
   const hasOptions = plan.data.options.length > 0;
 
   function save(values: EditPlan) {
-    const next = values.when
-      ? windowFor(values.when, areaById(values.areaId).timezone, new Date())
-      : { windowStart, windowEnd };
     const moved =
       values.areaId !== area.id ||
-      next.windowStart !== windowStart ||
-      next.windowEnd !== windowEnd;
+      values.windowStart !== windowStart ||
+      values.windowEnd !== windowEnd ||
+      values.parts.join() !== parts.join();
     if (!moved && values.title === title) {
       router.back();
       return;
@@ -58,15 +56,13 @@ export default function Edit() {
   }
 
   return (
-    <Screen>
-      <PlanForm
-        initial={{ title, areaId: area.id }}
-        currentWindow={{ windowStart, windowEnd }}
-        submitTitle="Save"
-        pending={edit.isPending}
-        error={edit.error?.message}
-        onSubmit={save}
-      />
-    </Screen>
+    <PlanForm
+      heading="Edit plan"
+      initial={{ title, areaId: area.id, windowStart, windowEnd, parts }}
+      submitTitle="Save"
+      pending={edit.isPending}
+      error={edit.error?.message}
+      onSubmit={save}
+    />
   );
 }

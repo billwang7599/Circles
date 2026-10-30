@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
+  addDays,
   datesIn,
   type CircleView,
+  type Part,
+  type When,
   type PlanView,
   type RegistrationInput,
 } from "@circles/shared";
@@ -14,7 +17,10 @@ let db: Db;
 let circleId: string;
 let nicky: string;
 let bill: string;
-let createPlan: (when: string) => ReturnType<TestApp["createPlan"]>;
+let createPlan: (
+  when: When,
+  parts?: Part[],
+) => ReturnType<TestApp["createPlan"]>;
 let planWithOptions: () => ReturnType<TestApp["planWithOptions"]>;
 
 beforeAll(async () => {
@@ -23,7 +29,7 @@ beforeAll(async () => {
   const circle = await t.circleWith("Nicky", "Bill");
   circleId = circle.circleId;
   [nicky, bill] = circle.tokens;
-  createPlan = (when) => t.createPlan(circleId, nicky, when);
+  createPlan = (when, parts) => t.createPlan(circleId, nicky, when, parts);
   planWithOptions = () => t.planWithOptions(circleId, [nicky, bill]);
 });
 
@@ -113,19 +119,20 @@ test("the initiator edits a plan; moving its window clears options and busy date
   });
   expect(busy.status).toBe(200);
 
-  const refused = await call("PUT", path, bill, {
+  const same = {
     title: "Ramen night",
     areaId: "uw",
-  });
+    windowStart: view.plan.windowStart,
+    windowEnd: view.plan.windowEnd,
+    parts: view.plan.parts,
+  };
+  const refused = await call("PUT", path, bill, same);
   expect(refused.status).toBe(403);
   expect(await refused.json()).toEqual({
     error: "Only the initiator can edit this plan",
   });
 
-  const renamed = await call("PUT", path, nicky, {
-    title: "Ramen night",
-    areaId: "uw",
-  });
+  const renamed = await call("PUT", path, nicky, same);
   expect(renamed.status).toBe(200);
   const afterRename = (await renamed.json()) as PlanView;
   expect(afterRename.plan.title).toBe("Ramen night");
@@ -136,9 +143,8 @@ test("the initiator edits a plan; moving its window clears options and busy date
   );
 
   const moved = await call("PUT", path, nicky, {
-    title: "Ramen night",
-    areaId: "uw",
-    when: "today",
+    ...same,
+    windowEnd: view.plan.windowStart,
   });
   expect(moved.status).toBe(200);
   const afterMove = (await moved.json()) as PlanView;
@@ -150,6 +156,74 @@ test("the initiator edits a plan; moving its window clears options and busy date
     budgetCents: 3000,
     busy: [],
   });
+});
+
+test("a plan keeps the chosen window and times of day; a past start or a long window is 400", async () => {
+  const plan = await createPlan("week", ["evening", "morning"]);
+  expect(plan.parts).toEqual(["morning", "evening"]);
+  const post = (body: object) =>
+    call("POST", `/api/circles/${circleId}/plans`, nicky, {
+      title: "Ramen",
+      areaId: "uw",
+      parts: ["evening"],
+      ...body,
+    });
+  const past = await post({
+    windowStart: addDays(plan.windowStart, -1),
+    windowEnd: plan.windowStart,
+  });
+  expect(past.status).toBe(400);
+  expect(await past.json()).toEqual({
+    error: "The plan can't start in the past",
+  });
+  const long = await post({
+    windowStart: plan.windowStart,
+    windowEnd: addDays(plan.windowStart, 15),
+  });
+  expect(long.status).toBe(400);
+  const none = await post({
+    windowStart: plan.windowStart,
+    windowEnd: plan.windowStart,
+    parts: [],
+  });
+  expect(none.status).toBe(400);
+});
+
+test("changing the times of day clears options and busy times in dropped parts", async () => {
+  const { path, view } = await planWithOptions();
+  const [first] = datesIn(view.plan.windowStart, view.plan.windowEnd);
+  const saved = await call("PUT", `${path}/registration`, bill, {
+    attending: true,
+    budgetCents: 3000,
+    busy: [
+      { date: first, part: "morning" },
+      { date: first, part: "evening" },
+    ],
+    preferences: [],
+  });
+  expect(saved.status).toBe(200);
+  const res = await call("PUT", path, nicky, {
+    title: view.plan.title,
+    areaId: view.plan.area.id,
+    windowStart: view.plan.windowStart,
+    windowEnd: view.plan.windowEnd,
+    parts: ["evening"],
+  });
+  expect(res.status).toBe(200);
+  const edited = (await res.json()) as PlanView;
+  expect(edited.plan.parts).toEqual(["evening"]);
+  expect(edited.options).toEqual([]);
+  const bills = (await (await call("GET", path, bill)).json()) as PlanView;
+  expect(bills.me.registration?.busy).toEqual([
+    { date: first, part: "evening" },
+  ]);
+  const outside = await call("PUT", `${path}/registration`, bill, {
+    attending: true,
+    budgetCents: 3000,
+    busy: [{ date: first, part: "morning" }],
+    preferences: [],
+  });
+  expect(outside.status).toBe(400);
 });
 
 test("registering, voting, locking and generating on an ended plan are 409", async () => {

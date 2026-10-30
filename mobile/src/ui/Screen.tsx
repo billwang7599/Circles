@@ -8,15 +8,17 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { size, space, useTheme } from "./theme";
+import { radius, size, space, useTheme } from "./theme";
 
 type Props = {
   children: ReactNode;
   footer?: ReactNode;
+  // Content on the raised panel below, as the home screen's circles sit.
+  sheet?: ReactNode;
   onRefresh?: () => Promise<unknown>;
 };
 
-export function Screen({ children, footer, onRefresh }: Props) {
+export function Screen({ children, footer, sheet, onRefresh }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const root = useRef<ComponentRef<typeof View>>(null);
@@ -50,9 +52,11 @@ export function Screen({ children, footer, onRefresh }: Props) {
           contentContainerStyle={[
             styles.content,
             {
-              paddingBottom: footer
-                ? space.gutter
-                : insets.bottom + space.gutter,
+              paddingBottom: sheet
+                ? 0
+                : footer
+                  ? space.gutter
+                  : insets.bottom + space.gutter,
             },
           ]}
           keyboardShouldPersistTaps="handled"
@@ -68,6 +72,19 @@ export function Screen({ children, footer, onRefresh }: Props) {
           }
         >
           <View style={styles.inner}>{children}</View>
+          {sheet ? (
+            <View
+              style={[
+                styles.sheet,
+                {
+                  backgroundColor: colors.sheet,
+                  paddingBottom: footer ? space.xl : insets.bottom + space.xl,
+                },
+              ]}
+            >
+              <View style={styles.sheetInner}>{sheet}</View>
+            </View>
+          ) : null}
         </ScrollView>
         {footer ? (
           <View
@@ -96,6 +113,21 @@ const styles = StyleSheet.create({
     maxWidth: size.maxWidth,
     paddingHorizontal: space.gutter,
     paddingTop: space.xl,
+    gap: space.xxl,
+  },
+  sheet: {
+    flexGrow: 1,
+    alignSelf: "stretch",
+    marginTop: space.xxl,
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+    paddingTop: space.xl,
+    alignItems: "center",
+  },
+  sheetInner: {
+    width: "100%",
+    maxWidth: size.maxWidth,
+    paddingHorizontal: space.gutter,
     gap: space.xxl,
   },
   footer: {
