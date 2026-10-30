@@ -12,7 +12,7 @@ import { Stack } from "expo-router";
 import * as SystemUI from "expo-system-ui";
 import { maybeCompleteAuthSession } from "expo-web-browser";
 import { useEffect } from "react";
-import { AppState, StatusBar, StyleSheet, View } from "react-native";
+import { AppState, StatusBar } from "react-native";
 import { isRefusal } from "../api";
 import { useSignedIn } from "../session";
 import { typeScale, useTheme } from "../ui/theme";
@@ -63,17 +63,6 @@ export default function RootLayout() {
         screenOptions={{
           headerStyle: { backgroundColor: colors.background },
           headerShadowVisible: false,
-          headerBackground: () => (
-            <View
-              style={[
-                styles.header,
-                {
-                  backgroundColor: colors.background,
-                  borderBottomColor: colors.border,
-                },
-              ]}
-            />
-          ),
           headerTintColor: colors.foreground,
           headerTitleAlign: "left",
           headerTitleStyle: {
@@ -118,7 +107,3 @@ export default function RootLayout() {
     </QueryClientProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  header: { flex: 1, borderBottomWidth: 1 },
-});

@@ -77,11 +77,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: space.sm,
-    borderWidth: 1,
-    paddingHorizontal: space.lg,
+    borderWidth: 1.5,
+    borderRadius: radius.full,
+    paddingHorizontal: space.xl,
   },
-  default: { minHeight: size.control, borderRadius: radius.md },
-  small: { minHeight: size.small, borderRadius: radius.lg, minWidth: 72 },
+  default: { minHeight: 52 },
+  small: { minHeight: size.small, minWidth: 72, paddingHorizontal: space.lg },
   // Long labels wrap at large text sizes instead of losing their end.
   title: { flexShrink: 1, textAlign: "center" },
 });

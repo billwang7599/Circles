@@ -11,7 +11,12 @@ import type {
   RegistrationInput,
   Vote,
 } from "@circles/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import Constants from "expo-constants";
 import { NativeModules, Platform } from "react-native";
 import { accessToken, forgetSession } from "./session";
@@ -24,8 +29,7 @@ const devHost =
   (scriptUrl ? new URL(scriptUrl).hostname : undefined) ??
   (__DEV__ && Platform.OS === "web" ? window.location.hostname : undefined);
 
-const baseUrl =
-  process.env.EXPO_PUBLIC_API_URL ?? (devHost ? `http://${devHost}:3001` : "");
+const baseUrl = process.env.EXPO_PUBLIC_API_URL ?? (devHost ? `http://${devHost}:3001` : "");
 
 // The server answered with an error, as opposed to not being reachable.
 class ApiError extends Error {
@@ -98,6 +102,18 @@ export function useCircle(id: string) {
     queryKey: keys.circle(id),
     queryFn: () => request<CircleView>(`/api/circles/${id}`),
     ...polling,
+  });
+}
+
+// Every circle at once, for the screens that show plans across circles.
+// Shares its cache with useCircle, so opening a circle shows it straight away.
+export function useCircles(ids: string[]) {
+  return useQueries({
+    queries: ids.map((id) => ({
+      queryKey: keys.circle(id),
+      queryFn: () => request<CircleView>(`/api/circles/${id}`),
+      ...polling,
+    })),
   });
 }
 

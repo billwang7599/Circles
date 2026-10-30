@@ -23,7 +23,7 @@ export function Chip({ label, icon, selected = false, onPress }: Props) {
         styles.chip,
         {
           backgroundColor: selected ? colors.primary : colors.control,
-          borderColor: selected ? colors.primary : colors.border,
+          borderColor: selected ? colors.primary : colors.input,
           opacity: pressed ? 0.7 : 1,
         },
       ]}
@@ -43,7 +43,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: space.inline,
     borderRadius: radius.full,
-    borderWidth: 1,
+    borderWidth: 1.5,
     paddingHorizontal: space.lg,
     justifyContent: "center",
     alignSelf: "flex-start",

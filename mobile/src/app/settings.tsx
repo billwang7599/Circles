@@ -26,6 +26,7 @@ const appearanceLabels: Record<AppearanceChoice, string> = {
 };
 
 const themeLabels: Record<ThemeId, string> = {
+  circles: "Circles",
   ink: "Ink",
   sand: "Sand",
   paper: "Paper",

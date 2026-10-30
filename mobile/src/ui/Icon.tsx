@@ -7,6 +7,8 @@ import {
 } from "expo-symbols";
 
 export type IconName =
+  | "arrow-left"
+  | "arrow-right"
   | "calendar"
   | "check"
   | "chevron-right"
@@ -25,6 +27,8 @@ export type IconName =
   | "zap";
 
 const symbols: Record<IconName, SymbolViewProps["name"]> = {
+  "arrow-left": "arrow.left",
+  "arrow-right": "arrow.right",
   calendar: "calendar",
   check: "checkmark",
   "chevron-right": "chevron.right",
@@ -46,6 +50,8 @@ const symbols: Record<IconName, SymbolViewProps["name"]> = {
 // Android and web fall back to Feather, whose names mostly match ours.
 const feather: Record<IconName, React.ComponentProps<typeof Feather>["name"]> =
   {
+    "arrow-left": "arrow-left",
+    "arrow-right": "arrow-right",
     calendar: "calendar",
     check: "check",
     "chevron-right": "chevron-right",

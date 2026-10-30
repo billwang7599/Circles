@@ -9,9 +9,19 @@ type Props = {
   color: AvatarColor;
   outlined?: boolean;
   ring?: boolean;
+  // The colour of the ring, where the avatar sits on something other than the background.
+  ringColor?: string;
+  size?: number;
 };
 
-export function Avatar({ name, color, outlined = false, ring = false }: Props) {
+export function Avatar({
+  name,
+  color,
+  outlined = false,
+  ring = false,
+  ringColor,
+  size = avatarSize,
+}: Props) {
   const { colors } = useTheme();
   const initials = name
     .split(/\s+/, 2)
@@ -24,6 +34,7 @@ export function Avatar({ name, color, outlined = false, ring = false }: Props) {
       importantForAccessibility="no-hide-descendants"
       style={[
         styles.avatar,
+        { width: size, height: size },
         outlined
           ? {
               backgroundColor: "transparent",
@@ -32,8 +43,8 @@ export function Avatar({ name, color, outlined = false, ring = false }: Props) {
             }
           : {
               backgroundColor: avatarColors[color],
-              borderWidth: ring ? 2 : 0,
-              borderColor: colors.background,
+              borderWidth: ring ? Math.max(1.5, size / 16) : 0,
+              borderColor: ringColor ?? colors.background,
             },
       ]}
     >
@@ -41,7 +52,10 @@ export function Avatar({ name, color, outlined = false, ring = false }: Props) {
         allowFontScaling={false}
         style={[
           styles.initials,
-          { color: outlined ? colors.textMuted : "#ffffff" },
+          {
+            color: outlined ? colors.textMuted : "#ffffff",
+            fontSize: Math.round(size * 0.34),
+          },
         ]}
       >
         {initials}
@@ -52,11 +66,9 @@ export function Avatar({ name, color, outlined = false, ring = false }: Props) {
 
 const styles = StyleSheet.create({
   avatar: {
-    width: avatarSize,
-    height: avatarSize,
     borderRadius: radius.full,
     alignItems: "center",
     justifyContent: "center",
   },
-  initials: { fontFamily: font.semibold, fontSize: 15 },
+  initials: { fontFamily: font.semibold },
 });

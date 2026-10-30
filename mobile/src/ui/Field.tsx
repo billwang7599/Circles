@@ -65,13 +65,13 @@ const styles = StyleSheet.create({
   field: { gap: space.sm },
   label: { flexDirection: "row", alignItems: "center", gap: space.inline },
   box: {
-    minHeight: size.control,
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
     gap: space.xs,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: space.md,
+    borderRadius: radius.xxl,
+    borderWidth: 1.5,
+    paddingHorizontal: space.lg,
   },
   prefix: { fontSize: 17 },
   input: {

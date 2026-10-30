@@ -50,3 +50,17 @@ export function formatStart(start: string, timeZone: string) {
 export function formatInterval({ start, end }: Interval, timeZone: string) {
   return `${formatStart(start, timeZone)} to ${timeFormat(timeZone).format(new Date(end))}`;
 }
+
+// A YYYY-MM-DD day, written out: "Thursday, Oct 8".
+export function formatDay(date: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(date));
+}
+
+export function formatTime(start: string, timeZone: string) {
+  return timeFormat(timeZone).format(new Date(start));
+}
