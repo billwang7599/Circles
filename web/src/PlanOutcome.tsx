@@ -137,6 +137,29 @@ function OptionList({
             {o.rationale}
           </p>
 
+          {o.web && (
+            <div className="mt-3 text-xs text-ink-soft">
+              <p>
+                <span className="font-medium text-ink">On the web:</span>{" "}
+                {o.web.note}
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {o.web.sources.map((s) => (
+                  <li key={s.url}>
+                    <a
+                      href={s.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-brand-deep underline"
+                    >
+                      {s.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {(o.availableTimes ?? []).length > 0 && (
             <div className="mt-3">
               <p className="text-xs font-medium text-ink">

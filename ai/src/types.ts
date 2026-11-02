@@ -26,6 +26,13 @@ export interface Candidate {
   /** Largest party the place can seat. Missing means unknown (Places has no capacity field). */
   maxPartySize?: number;
   source: string;
+  /** AgentCore's terms: wherever the note is shown, show its sources too. */
+  web?: WebMention;
+}
+
+export interface WebMention {
+  note: string;
+  sources: { title: string; url: string }[];
 }
 
 /** Minutes from Sunday 00:00 local time. A period crossing the week end has close > 10080. */
