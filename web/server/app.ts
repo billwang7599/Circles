@@ -15,20 +15,29 @@ import { streamSSE } from "hono/streaming";
 import { createModel } from "./model.ts";
 import { PlanStore } from "./plans.ts";
 import { createRestaurantClient } from "./restaurants.ts";
+import { createWebClient } from "./webSearch.ts";
 
 export function defaultDeps(): PlanDeps {
   const llm = createModel();
   const restaurants = createRestaurantClient();
+  const web = createWebClient();
   console.log(`LLM: ${llm.description}`);
   console.log(`Restaurants: ${restaurants.description}`);
+  console.log(`Web: ${web.description}`);
   const client = new LlmClient(llm.model, {
     onUsage: (u) =>
       console.log(
         `LLM ${u.call}: ${u.ms}ms, in ${u.inputTokens ?? "?"}, out ${u.outputTokens ?? "?"}` +
-          (u.reasoningTokens ? ` (reasoning ${u.reasoningTokens})` : ""),
+          (u.reasoningTokens ? ` (reasoning ${u.reasoningTokens})` : "") +
+          (u.web
+            ? `, ${u.web.searches} searches, ${u.web.pageReads} page reads` +
+              (u.web.errors.length
+                ? `, errors: ${u.web.errors.join("; ")}`
+                : "")
+            : ""),
       ),
   });
-  return { llm: client, restaurants: restaurants.client };
+  return { llm: client, restaurants: restaurants.client, web: web.client };
 }
 
 export interface AppOptions {

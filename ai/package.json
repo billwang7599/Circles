@@ -5,6 +5,7 @@
   "dependencies": {
     "@circles/shared": "*",
     "ai": "^7.0.157",
+    "aws4fetch": "^1.0.20",
     "zod": "^4.6.5"
   },
   "devDependencies": {

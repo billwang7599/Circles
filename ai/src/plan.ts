@@ -8,7 +8,7 @@ import {
   type PlanStage,
   type SearchFields,
 } from "./types.ts";
-import { areaById } from "@circles/shared";
+import { areaById, localDate } from "@circles/shared";
 import { z } from "zod";
 import {
   availableTimes,
@@ -24,13 +24,16 @@ import {
   type LlmClient,
   type RankCandidate,
   type RankedPick,
+  type WebPlace,
 } from "./llm.ts";
-import type { RestaurantClient } from "./restaurants.ts";
+import type { RestaurantClient, RestaurantQuery } from "./restaurants.ts";
 import { validated } from "./validated.ts";
+import type { WebClient } from "./webSearch.ts";
 
 export interface PlanDeps {
   llm: LlmClient;
   restaurants: RestaurantClient;
+  web?: WebClient;
   /** Injectable clock for tests. */
   now?: () => Date;
 }
@@ -112,6 +115,40 @@ function shortfallNotice(
   return causes.length > 0
     ? `${head} ${causes.join(", ")}. Switch a filter to Prefer to see more.`
     : head;
+}
+
+const nameWords = (name: string) =>
+  ` ${name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()} `;
+
+const sameName = (a: string, b: string) => {
+  const [x, y] = [nameWords(a), nameWords(b)];
+  return x.trim() !== "" && y.trim() !== "" && (x.includes(y) || y.includes(x));
+};
+
+// A web place counts only once the places search finds it, so it has hours, price and a location.
+async function addWebPlaces(
+  listed: Candidate[],
+  webPlaces: WebPlace[],
+  restaurants: RestaurantClient,
+  area: Omit<RestaurantQuery, "query">,
+): Promise<Candidate[]> {
+  const matches = await Promise.all(
+    webPlaces.map(async ({ name, note, sources }) => {
+      const found = await restaurants.search({ ...area, query: name });
+      const match = found.find((c) => sameName(c.name, name));
+      return match && { ...match, web: { note, sources } };
+    }),
+  );
+  const byId = new Map(listed.map((c) => [c.id, c]));
+  for (const m of matches) {
+    if (m) byId.set(m.id, { ...(byId.get(m.id) ?? m), web: m.web });
+  }
+  return [...byId.values()];
 }
 
 function describeChecks(
@@ -204,10 +241,20 @@ export async function planEvent(
 
   // 1. Fetch and filter (plain code)
   onProgress?.("searching");
-  const found = await deps.restaurants.search({
+  const [listed, webPlaces] = await Promise.all([
+    deps.restaurants.search({ center, radiusKm, query: request.text }),
+    deps.web
+      ? deps.llm.research({
+          text: request.text,
+          where: `${area.name} (${area.lat}, ${area.lng}), within ${radiusKm} km`,
+          today: localDate(now, area.timezone),
+          web: deps.web,
+        })
+      : [],
+  ]);
+  const found = await addWebPlaces(listed, webPlaces, deps.restaurants, {
     center,
     radiusKm,
-    query: request.text,
   });
   if (found.length === 0) return noMatches("no_restaurants");
 
