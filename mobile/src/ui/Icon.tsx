@@ -23,6 +23,8 @@ export type IconName =
   | "pencil"
   | "plus"
   | "search"
+  | "share"
+  | "sparkles"
   | "star"
   | "sun"
   | "sunset"
@@ -47,6 +49,8 @@ const symbols: Record<IconName, SymbolViewProps["name"]> = {
   pencil: "pencil",
   plus: "plus",
   search: "magnifyingglass",
+  share: "square.and.arrow.up",
+  sparkles: "sparkles",
   star: "star",
   sun: "sun.max",
   sunset: "sun.horizon",
@@ -74,6 +78,8 @@ const feather: Record<IconName, React.ComponentProps<typeof Feather>["name"]> =
     pencil: "edit-2",
     plus: "plus",
     search: "search",
+    share: "share",
+    sparkles: "star",
     star: "star",
     sun: "sun",
     sunset: "sunset",

@@ -6,12 +6,22 @@ type Props<T extends string> = {
   tabs: readonly { id: T; label: string }[];
   value: T;
   onChange: (value: T) => void;
+  // Shorter pills that size to their label, for rows of three or more.
+  compact?: boolean;
 };
 
-export function Tabs<T extends string>({ tabs, value, onChange }: Props<T>) {
+export function Tabs<T extends string>({
+  tabs,
+  value,
+  onChange,
+  compact = false,
+}: Props<T>) {
   const { colors } = useTheme();
   return (
-    <View style={styles.tabs} accessibilityRole="tablist">
+    <View
+      style={[styles.tabs, compact && styles.compactTabs]}
+      accessibilityRole="tablist"
+    >
       {tabs.map((tab) => {
         const selected = tab.id === value;
         return (
@@ -22,6 +32,7 @@ export function Tabs<T extends string>({ tabs, value, onChange }: Props<T>) {
             onPress={() => onChange(tab.id)}
             style={({ pressed }) => [
               styles.tab,
+              compact && styles.compact,
               {
                 backgroundColor: selected ? colors.primary : "transparent",
                 borderColor: colors.primary,
@@ -55,4 +66,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  compactTabs: { gap: space.sm },
+  compact: { minWidth: 0, height: 42, paddingHorizontal: space.lg + 2 },
 });

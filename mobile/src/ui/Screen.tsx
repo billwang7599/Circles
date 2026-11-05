@@ -13,12 +13,20 @@ import { radius, size, space, useTheme } from "./theme";
 type Props = {
   children: ReactNode;
   footer?: ReactNode;
+  // A footer that floats on the background with no rule above it.
+  bareFooter?: boolean;
   // Content on the raised panel below, as the home screen's circles sit.
   sheet?: ReactNode;
   onRefresh?: () => Promise<unknown>;
 };
 
-export function Screen({ children, footer, sheet, onRefresh }: Props) {
+export function Screen({
+  children,
+  footer,
+  bareFooter = false,
+  sheet,
+  onRefresh,
+}: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const root = useRef<ComponentRef<typeof View>>(null);
@@ -93,6 +101,7 @@ export function Screen({ children, footer, sheet, onRefresh }: Props) {
               {
                 backgroundColor: colors.background,
                 borderTopColor: colors.border,
+                borderTopWidth: bareFooter ? 0 : 1,
                 paddingBottom: space.md + insets.bottom,
               },
             ]}
