@@ -27,8 +27,14 @@ function pgliteDb(pg: PGlite): Db {
   };
 }
 
+// PGlite takes seconds to boot on CI, so each test file boots one at import, outside any test's
+// timeout, and every testDb() call wipes it.
+const pg = new PGlite();
+await pg.waitReady;
+const db = pgliteDb(pg);
+
 export async function testDb(): Promise<Db> {
-  const db = pgliteDb(new PGlite());
+  await db.exec("drop schema public cascade; create schema public");
   await migrate(db);
   return db;
 }
