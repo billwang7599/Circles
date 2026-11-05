@@ -59,7 +59,6 @@ there (`npx expo run:ios --device`). Sign-in added native modules, so rebuild th
 `npm run ios -w mobile`.
 
 Cognito can't turn passwords off: its sign-up page asks for one, and sign-in offers the email code or the password.
-While SES is in its sandbox, codes only reach verified addresses.
 
 The user pool, managed login domain and app client are in `infra/auth.yml`. Deploy or update them with:
 
@@ -74,6 +73,25 @@ aws cloudformation describe-stacks --profile circles --region ca-central-1 --sta
 
 The sender must be a verified SES identity in `ca-central-1`; Cognito creates its own role to send through it. The pool
 has deletion protection on, so turn that off before deleting the stack.
+
+Email alerts for sign-in spam (SES send volume, bounces, complaints) and $0.50/month budgets on Cognito and SES live in
+`infra/alerts.yml`. Deploy them with:
+
+```
+aws cloudformation deploy --profile circles --region ca-central-1 --stack-name circles-alerts \
+  --template-file infra/alerts.yml --capabilities CAPABILITY_IAM --parameter-overrides AlertEmail=billwang7599@gmail.com
+```
+
+Confirm the SNS subscription email once. Budgets only send email, so the stack also pauses SES sending for the account
+(which blocks sign-in codes) at more than 200 emails in an hour or about 3,000 in a month, and emails the alert. Sending
+stays paused until you turn it back on:
+
+```
+aws sesv2 put-account-sending-attributes --profile circles --region ca-central-1 --sending-enabled
+```
+
+Past the monthly cap, the hourly check pauses it again, so raise `MonthlySendLimit` first. Changing `AlertEmail`
+replaces both budgets, which fails on their fixed names: deploy once with the budgets cut from the template, then again.
 
 **Checks**
 

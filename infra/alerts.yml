@@ -1,0 +1,244 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Circles alerts for sign-in spam (SES volume, bounces, complaints) and Cognito/SES spend; caps SES sends
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Description: Who gets the alerts
+  MonthlyLimitUsd:
+    Type: Number
+    Default: 0.5
+  HourlySendLimit:
+    Type: Number
+    Default: 200
+    Description: More code emails than this in an hour looks like a sign-up flood; SES sending pauses
+  MonthlySendLimit:
+    Type: Number
+    Default: 3000
+    Description: SES sending pauses once this many emails went out this month (about $0.50)
+
+Resources:
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: circles-alerts
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlertEmail
+
+  EmailFloodAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: circles-ses-email-flood
+      AlarmDescription: Unusually many sign-in emails sent in an hour
+      Namespace: AWS/SES
+      MetricName: Send
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: !Ref HourlySendLimit
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  PauseSendingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: pause-ses-sending
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:GetAccount
+                  - ses:PutAccountSendingAttributes
+                  - cloudwatch:GetMetricStatistics
+                Resource: "*"
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref AlertTopic
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt PauseSendingLogs.Arn
+
+  PauseSendingLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/circles-ses-pause
+      RetentionInDays: 30
+
+  PauseSendingFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: circles-ses-pause
+      Runtime: python3.13
+      Handler: index.handler
+      Timeout: 30
+      Role: !GetAtt PauseSendingRole.Arn
+      LoggingConfig: { LogGroup: !Ref PauseSendingLogs }
+      Environment:
+        Variables:
+          TOPIC_ARN: !Ref AlertTopic
+          HOURLY_SEND_LIMIT: !Ref HourlySendLimit
+          MONTHLY_SEND_LIMIT: !Ref MonthlySendLimit
+      Code:
+        ZipFile: |
+          import os
+          from datetime import datetime, timezone
+
+          import boto3
+
+          ses = boto3.client("sesv2")
+          cloudwatch = boto3.client("cloudwatch")
+          sns = boto3.client("sns")
+
+
+          def pause(reason):
+              if not ses.get_account()["SendingEnabled"]:
+                  return False
+              ses.put_account_sending_attributes(SendingEnabled=False)
+              sns.publish(
+                  TopicArn=os.environ["TOPIC_ARN"],
+                  Subject="Circles: SES sending paused",
+                  Message=f"{reason} Sign-in emails are blocked until you re-enable sending:\n\n"
+                  "aws sesv2 put-account-sending-attributes --profile circles --region ca-central-1 --sending-enabled",
+              )
+              return True
+
+
+          def sends_this_month():
+              now = datetime.now(timezone.utc)
+              month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+              points = cloudwatch.get_metric_statistics(
+                  Namespace="AWS/SES",
+                  MetricName="Send",
+                  StartTime=month_start,
+                  EndTime=now,
+                  Period=3600,
+                  Statistics=["Sum"],
+              )["Datapoints"]
+              return int(sum(p["Sum"] for p in points))
+
+
+          def handler(event, context):
+              if "Records" in event:
+                  limit = os.environ["HOURLY_SEND_LIMIT"]
+                  return {"paused": pause(f"Over {limit} emails went out in an hour.")}
+              sent = sends_this_month()
+              limit = int(os.environ["MONTHLY_SEND_LIMIT"])
+              paused = sent >= limit and pause(f"{sent} emails went out this month (limit {limit}).")
+              return {"sent": sent, "limit": limit, "paused": paused}
+
+  FloodAlarmPausesSending:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: lambda
+      Endpoint: !GetAtt PauseSendingFunction.Arn
+      FilterPolicyScope: MessageBody
+      FilterPolicy: { AlarmName: [!Ref EmailFloodAlarm] }
+
+  AlertTopicInvokesPause:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref PauseSendingFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref AlertTopic
+
+  MonthlySendCheck:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: circles-ses-monthly-send-check
+      ScheduleExpression: rate(1 hour)
+      Targets:
+        - Id: pause
+          Arn: !GetAtt PauseSendingFunction.Arn
+
+  MonthlySendCheckInvokesPause:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref PauseSendingFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt MonthlySendCheck.Arn
+
+  # AWS reviews an account at 5% bounces or 0.1% complaints; these fire before that.
+  BounceRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: circles-ses-bounce-rate
+      AlarmDescription: SES bounce rate above 3%
+      Namespace: AWS/SES
+      MetricName: Reputation.BounceRate
+      Statistic: Maximum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 0.03
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  ComplaintRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: circles-ses-complaint-rate
+      AlarmDescription: SES complaint rate above 0.05%
+      Namespace: AWS/SES
+      MetricName: Reputation.ComplaintRate
+      Statistic: Maximum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 0.0005
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  CognitoBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: circles-cognito
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: { Amount: !Ref MonthlyLimitUsd, Unit: USD }
+        CostFilters: { Service: [Amazon Cognito] }
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+
+  EmailBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: circles-ses
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: { Amount: !Ref MonthlyLimitUsd, Unit: USD }
+        CostFilters: { Service: [Amazon Simple Email Service] }
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
