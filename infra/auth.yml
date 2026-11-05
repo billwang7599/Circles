@@ -69,7 +69,7 @@ Resources:
         - circles://sign-in
         - http://localhost:8081/sign-in
         - exp://127.0.0.1:8081/--/sign-in
-      PreventUserExistenceErrors: ENABLED
+      PreventUserExistenceErrors: LEGACY
       EnableTokenRevocation: true
       RefreshTokenValidity: 365
       TokenValidityUnits:
