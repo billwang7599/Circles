@@ -9,10 +9,20 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ci-889f2eab7cae4e068cc6b522abc6fa1c.ecs.ca-central-1.on.aws",
+        "EXPO_PUBLIC_COGNITO_CLIENT_ID": "58rsuggi7d8ctg5b6bighfd02r",
+        "EXPO_PUBLIC_COGNITO_DOMAIN": "circles.auth.ca-central-1.amazoncognito.com"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ci-889f2eab7cae4e068cc6b522abc6fa1c.ecs.ca-central-1.on.aws",
+        "EXPO_PUBLIC_COGNITO_CLIENT_ID": "58rsuggi7d8ctg5b6bighfd02r",
+        "EXPO_PUBLIC_COGNITO_DOMAIN": "circles.auth.ca-central-1.amazoncognito.com"
+      }
     }
   },
   "submit": {

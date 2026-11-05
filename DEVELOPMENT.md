@@ -107,4 +107,5 @@ the fakes.
 Every push to any branch runs CI: lint, typecheck, tests and build for every workspace. A push to `main` that touches
 `api/`, `shared/`, the root `package.json` or lockfile, or the workflows also deploys the API to AWS (image to ECR, then
 ECS in `ca-central-1`). The ECS service needs the three `COGNITO_*` values or the API won't start. `web/` is never
-deployed. Phones point at the AWS API via `EXPO_PUBLIC_API_URL`.
+deployed. Phones point at the AWS API via `EXPO_PUBLIC_API_URL`. EAS `preview` and `production` builds get it and the
+`EXPO_PUBLIC_COGNITO_*` values from `env` in `mobile/eas.json`.
