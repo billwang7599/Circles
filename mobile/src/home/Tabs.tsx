@@ -35,7 +35,7 @@ export function Tabs<T extends string>({
               compact && styles.compact,
               {
                 backgroundColor: selected ? colors.primary : "transparent",
-                borderColor: colors.primary,
+                borderColor: selected ? colors.primary : colors.input,
                 opacity: pressed ? 0.7 : 1,
               },
             ]}
@@ -56,16 +56,16 @@ export function Tabs<T extends string>({
 }
 
 const styles = StyleSheet.create({
-  tabs: { flexDirection: "row", gap: space.lg },
+  tabs: { flexDirection: "row", gap: space.sm },
   tab: {
-    minWidth: 128,
-    height: 50,
-    paddingHorizontal: space.xl,
+    minWidth: 96,
+    height: 44,
+    paddingHorizontal: space.gutter,
     borderRadius: radius.full,
-    borderWidth: 1.5,
+    borderWidth: 1.2,
     alignItems: "center",
     justifyContent: "center",
   },
   compactTabs: { gap: space.sm },
-  compact: { minWidth: 0, height: 42, paddingHorizontal: space.lg + 2 },
+  compact: { minWidth: 0, height: 40, paddingHorizontal: space.lg + 2 },
 });

@@ -68,5 +68,5 @@ export default function Join() {
 
 const styles = StyleSheet.create({
   form: { gap: space.lg },
-  code: { fontFamily: font.semibold },
+  code: { fontFamily: font.medium },
 });

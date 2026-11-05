@@ -34,11 +34,11 @@ export function Card({ list = false, style, children, ...rest }: Props) {
 
 const styles = StyleSheet.create({
   card: {
-    borderWidth: 1,
-    borderRadius: radius.card,
+    borderWidth: 0,
+    borderRadius: radius.card + 4,
     padding: space.gutter,
     gap: space.lg,
   },
-  list: { borderWidth: 1, borderRadius: radius.card, overflow: "hidden" },
+  list: { borderWidth: 0, borderRadius: radius.card + 4, overflow: "hidden" },
   divider: { height: 1, marginLeft: space.lg },
 });

@@ -23,6 +23,7 @@ import { isRefusal, useCircle, useLeaveCircle } from "../../../api";
 import { confirmAction } from "../../../confirm";
 import { formatTime } from "../../../dates";
 import { isOver, plural } from "../../../home/agenda";
+import { STACK_OVERLAP } from "../../../home/CircleCard";
 import { Tabs } from "../../../home/Tabs";
 import { Avatar } from "../../../ui/Avatar";
 import { AvatarStack } from "../../../ui/AvatarStack";
@@ -37,6 +38,7 @@ import {
   radius,
   space,
   useTheme,
+  typeScale,
   type CircleTone,
 } from "../../../ui/theme";
 
@@ -121,8 +123,7 @@ export default function Circle() {
       bareFooter
       footer={
         <Button
-          title="Plan something new"
-          icon="sparkles"
+          title="+ Plan something new"
           onPress={newPlan}
           style={styles.grow}
         />
@@ -151,9 +152,17 @@ export default function Circle() {
               text="Pick a few days and Circles finds a time that works for everyone."
             />
           ) : (
-            upcoming.map((plan) => (
-              <PlanCard key={plan.id} plan={plan} circleId={circleId} />
-            ))
+            <View>
+              {upcoming.map((plan, index) => (
+                <PlanCard
+                  key={plan.id}
+                  plan={plan}
+                  circleId={circleId}
+                  stacked={index > 0}
+                  covered={index < upcoming.length - 1}
+                />
+              ))}
+            </View>
           )}
         </View>
       ) : tab === "past" ? (
@@ -164,9 +173,17 @@ export default function Circle() {
               text="Plans you've done together will show up here."
             />
           ) : (
-            past.map((plan) => (
-              <PlanCard key={plan.id} plan={plan} circleId={circleId} />
-            ))
+            <View>
+              {past.map((plan, index) => (
+                <PlanCard
+                  key={plan.id}
+                  plan={plan}
+                  circleId={circleId}
+                  stacked={index > 0}
+                  covered={index < past.length - 1}
+                />
+              ))}
+            </View>
           )}
         </View>
       ) : (
@@ -213,28 +230,39 @@ export default function Circle() {
 function Hero({ view }: { view: CircleView }) {
   const tone = circleTone(view.circle.id);
   const since = view.members.map((member) => member.joinedAt).sort()[0];
+  const upcoming = view.plans.filter((plan) => !isOver(plan)).length;
   return (
-    <View style={[styles.hero, { backgroundColor: tone.fill }]}>
-      <Text
-        accessibilityRole="header"
-        numberOfLines={3}
-        style={[styles.name, { color: tone.ink }]}
-      >
-        {view.circle.name}
-      </Text>
+    <View style={styles.hero}>
+      <View>
+        <View style={styles.kicker}>
+          <View style={[styles.kickerDot, { backgroundColor: tone.fill }]} />
+          <Text color="textMuted" variant="section">
+            {since ? `Circle since ${monthYear(since)}` : "Circle"}
+          </Text>
+        </View>
+        <Text
+          accessibilityRole="header"
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.5}
+          style={[typeScale.hero, styles.name]}
+        >
+          {view.circle.name}
+        </Text>
+      </View>
       <View style={styles.heroMeta}>
+        <Stat value={view.members.length} label="members" />
+        <Stat value={upcoming} label="upcoming" />
+        <Stat value={view.plans.length - upcoming} label="done" />
+        <View style={styles.grow} />
         <AvatarStack
           members={view.members}
           ringColor={tone.fill}
           moreColor={tone.ink}
           moreTextColor={tone.onInk}
           size={30}
-          max={5}
+          max={4}
         />
-        <Text variant="label" style={[styles.grow, { color: tone.ink }]}>
-          {plural(view.members.length, "member")}
-          {since ? `  ·  Since ${monthYear(since, true)}` : ""}
-        </Text>
       </View>
     </View>
   );
@@ -292,7 +320,19 @@ function describe(plan: PlanSummary) {
   };
 }
 
-function PlanCard({ plan, circleId }: { plan: PlanSummary; circleId: string }) {
+function PlanCard({
+  plan,
+  circleId,
+  stacked,
+  covered,
+}: {
+  plan: PlanSummary;
+  circleId: string;
+  // Tucks this card under the one before, so a list reads as a stack.
+  stacked: boolean;
+  // Another card tucks under this one.
+  covered: boolean;
+}) {
   const { colors } = useTheme();
   const over = isOver(plan);
   // Each plan wears its own tone, so a list of them reads as a stack of colour.
@@ -313,19 +353,48 @@ function PlanCard({ plan, circleId }: { plan: PlanSummary; circleId: string }) {
       onPress={open}
       style={({ pressed }) => [
         styles.card,
-        { backgroundColor: tone.fill, opacity: pressed ? 0.85 : 1 },
+        stacked && styles.stacked,
+        covered && styles.covered,
+        { backgroundColor: tone.fill, opacity: pressed ? 0.92 : 1 },
       ]}
     >
       <View style={styles.cardTop}>
-        <Text style={[styles.grow, styles.cardLabel, { color: tone.ink }]}>
-          {info.label}
+        <View style={styles.grow}>
+          <Text
+            numberOfLines={2}
+            style={[styles.cardTitle, { color: tone.ink }]}
+          >
+            {plan.title}
+          </Text>
+          <Text style={[styles.cardLabel, { color: tone.ink }]}>
+            {info.label}
+          </Text>
+        </View>
+        <View style={styles.cardDate}>
+          <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            style={[styles.cardDay, { color: tone.ink }]}
+          >
+            {info.day}
+          </Text>
+          <Text style={[styles.cardMonth, { color: tone.ink }]}>
+            {info.month}
+          </Text>
+        </View>
+      </View>
+      <View style={[styles.cardRule, { backgroundColor: tone.ink }]} />
+      <View style={styles.cardBottom}>
+        <Text style={[styles.cardBig, { color: tone.ink }]}>{info.big}</Text>
+        <Text style={[styles.grow, styles.cardSmall, { color: tone.ink }]}>
+          {info.small}
         </Text>
         <View
           style={[
             styles.badge,
             info.urgent
               ? { backgroundColor: tone.ink }
-              : { borderWidth: 1.5, borderColor: tone.ink },
+              : { borderWidth: 1.2, borderColor: tone.ink },
           ]}
         >
           <Text
@@ -339,31 +408,16 @@ function PlanCard({ plan, circleId }: { plan: PlanSummary; circleId: string }) {
           </Text>
         </View>
       </View>
-      <Text numberOfLines={2} style={[styles.cardTitle, { color: tone.ink }]}>
-        {plan.title}
-      </Text>
-      <View style={styles.cardBottom}>
-        <View style={styles.grow}>
-          <Text
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            style={[styles.cardDay, { color: tone.ink }]}
-          >
-            {info.day}
-          </Text>
-          <Text style={[styles.cardMonth, { color: tone.ink }]}>
-            {info.month}
-          </Text>
-        </View>
-        <View style={[styles.cardRule, { backgroundColor: tone.ink }]} />
-        <View style={styles.cardTime}>
-          <Text style={[styles.cardBig, { color: tone.ink }]}>{info.big}</Text>
-          <Text variant="caption" style={{ color: tone.ink, opacity: 0.7 }}>
-            {info.small}
-          </Text>
-        </View>
-      </View>
     </Pressable>
+  );
+}
+
+function Stat({ value, label }: { value: number; label: string }) {
+  return (
+    <View accessible accessibilityLabel={`${value} ${label}`}>
+      <Text variant="stat">{value}</Text>
+      <Text color="textMuted">{label}</Text>
+    </View>
   );
 }
 
@@ -408,7 +462,7 @@ function Panel({
 }) {
   const { colors } = useTheme();
   return (
-    <View style={[styles.panel, { backgroundColor: colors.card }, style]}>
+    <View style={[styles.panel, { backgroundColor: colors.surface }, style]}>
       {children}
     </View>
   );
@@ -454,76 +508,61 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   top: { gap: space.xl },
-  hero: {
-    borderRadius: radius.card + 4,
-    paddingHorizontal: space.xl,
-    paddingTop: space.xl,
-    paddingBottom: space.gutter,
-    gap: space.xl,
-  },
-  name: {
-    fontFamily: font.semibold,
-    fontSize: 48,
-    lineHeight: 52,
-    letterSpacing: -2.4,
-  },
-  heroMeta: { flexDirection: "row", alignItems: "center", gap: space.md },
+  hero: { gap: space.xl },
+  kicker: { flexDirection: "row", alignItems: "center", gap: space.sm },
+  kickerDot: { width: 12, height: 12, borderRadius: radius.full },
+  name: { fontSize: 64, lineHeight: 64, letterSpacing: -3.8 },
+  heroMeta: { flexDirection: "row", alignItems: "flex-end", gap: space.xl },
   list: { gap: space.md },
   card: {
-    borderRadius: radius.card + 4,
-    paddingHorizontal: space.xl,
-    paddingTop: space.lg + 2,
-    paddingBottom: space.xl,
-    gap: space.xs,
+    borderRadius: radius.card + 6,
+    paddingHorizontal: space.gutter + 2,
+    paddingTop: space.gutter,
+    paddingBottom: space.lg,
+    gap: space.md,
   },
-  cardTop: { flexDirection: "row", alignItems: "center", gap: space.sm },
-  cardLabel: { fontFamily: font.medium, fontSize: 14, opacity: 0.75 },
+  stacked: {
+    marginTop: -STACK_OVERLAP,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: -2 },
+  },
+  covered: { paddingBottom: space.lg + STACK_OVERLAP },
+  cardTop: { flexDirection: "row", alignItems: "flex-start", gap: space.md },
+  cardTitle: {
+    fontFamily: font.medium,
+    fontSize: 28,
+    lineHeight: 32,
+    letterSpacing: -1.4,
+  },
+  cardLabel: { fontSize: 15, opacity: 0.75, marginTop: 2 },
+  cardDate: { alignItems: "flex-end", maxWidth: "40%" },
+  cardDay: {
+    fontFamily: font.regular,
+    fontSize: 44,
+    lineHeight: 46,
+    letterSpacing: -1.3,
+  },
+  cardMonth: { fontSize: 14, opacity: 0.8 },
+  cardRule: { height: 1, opacity: 0.15 },
+  cardBottom: { flexDirection: "row", alignItems: "center", gap: space.sm },
+  cardBig: {
+    fontFamily: font.medium,
+    fontSize: 18,
+    lineHeight: 22,
+    letterSpacing: -0.6,
+  },
+  cardSmall: { fontSize: 15, opacity: 0.7 },
   badge: {
     borderRadius: radius.full,
     paddingHorizontal: space.md,
     paddingVertical: space.xs,
   },
-  badgeText: { fontFamily: font.semibold, letterSpacing: -0.1 },
-  cardTitle: {
-    fontFamily: font.semibold,
-    fontSize: 28,
-    lineHeight: 31,
-    letterSpacing: -1.2,
-  },
-  cardBottom: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: space.lg,
-    marginTop: space.lg,
-  },
-  cardDay: {
-    fontFamily: font.semibold,
-    fontSize: 52,
-    lineHeight: 54,
-    letterSpacing: -2.6,
-  },
-  cardMonth: {
-    fontFamily: font.semibold,
-    fontSize: 20,
-    lineHeight: 22,
-    letterSpacing: -0.6,
-  },
-  cardRule: {
-    width: 1,
-    alignSelf: "stretch",
-    opacity: 0.25,
-    marginVertical: space.xs,
-  },
-  cardTime: { flex: 1, gap: 2, paddingBottom: 2 },
-  cardBig: {
-    fontFamily: font.semibold,
-    fontSize: 24,
-    lineHeight: 28,
-    letterSpacing: -1,
-  },
+  badgeText: { fontFamily: font.medium, letterSpacing: -0.3 },
   panel: {
-    borderRadius: radius.card,
-    paddingHorizontal: space.lg,
+    borderRadius: radius.card + 6,
+    paddingHorizontal: space.gutter,
     paddingVertical: space.xs,
   },
   invite: {
@@ -533,7 +572,7 @@ const styles = StyleSheet.create({
     paddingVertical: space.lg,
   },
   code: {
-    fontFamily: font.semibold,
+    fontFamily: font.medium,
     fontSize: 30,
     lineHeight: 36,
     letterSpacing: 1.5,

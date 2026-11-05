@@ -2,23 +2,40 @@ import type { CircleView, Me } from "@circles/shared";
 import { Pressable, StyleSheet, View } from "react-native";
 import { AvatarStack } from "../ui/AvatarStack";
 import { Text } from "../ui/Text";
-import { circleTone, font, radius, space } from "../ui/theme";
+import { circleTone, font, radius, space, useTheme } from "../ui/theme";
 import { isOver, needsMe, nextLine, plural } from "./agenda";
 
 type Props = {
   circle: Me["circles"][number];
   // The circle's members and plans, once loaded.
   view?: CircleView;
+  // Tucks this card under the bottom of the one before, as a stack.
+  stacked?: boolean;
+  // Another card tucks under this one, so its bottom is left free for it.
+  covered?: boolean;
   onPress: () => void;
 };
 
-export function CircleCard({ circle, view, onPress }: Props) {
+// How far each card slides up under the one above it.
+export const STACK_OVERLAP = 28;
+
+export function CircleCard({
+  circle,
+  view,
+  stacked = false,
+  covered = false,
+  onPress,
+}: Props) {
+  const { colors } = useTheme();
   const tone = circleTone(circle.id);
   const upcoming = view?.plans.filter((plan) => !isOver(plan)).length;
-  const status = needsMe(circle.next)
+  const urgent = needsMe(circle.next);
+  const status = urgent
     ? nextLine(circle.next)
     : upcoming !== undefined
-      ? plural(upcoming, "upcoming plan")
+      ? `${plural(upcoming, "upcoming plan")}${
+          view ? ` · ${plural(view.members.length, "member")}` : ""
+        }`
       : nextLine(circle.next);
   return (
     <Pressable
@@ -27,73 +44,77 @@ export function CircleCard({ circle, view, onPress }: Props) {
       onPress={onPress}
       style={({ pressed }) => [
         styles.card,
-        { backgroundColor: tone.fill, opacity: pressed ? 0.85 : 1 },
+        stacked && styles.stacked,
+        covered && styles.covered,
+        { backgroundColor: tone.fill, opacity: pressed ? 0.92 : 1 },
       ]}
     >
-      <View style={styles.top}>
+      <View style={styles.text}>
         <Text
-          numberOfLines={2}
+          numberOfLines={1}
           style={[styles.name, { color: tone.ink }]}
           accessibilityElementsHidden
         >
           {circle.name}
         </Text>
-        {view ? (
-          <AvatarStack
-            members={view.members}
-            ringColor={tone.fill}
-            moreColor={tone.ink}
-            moreTextColor={tone.onInk}
-          />
-        ) : null}
+        <View style={styles.statusRow}>
+          {urgent ? (
+            <View style={[styles.flag, { backgroundColor: colors.accent }]} />
+          ) : null}
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.status,
+              {
+                color: tone.ink,
+                fontFamily: urgent ? font.medium : font.regular,
+              },
+            ]}
+          >
+            {status}
+          </Text>
+        </View>
       </View>
-      <View style={styles.bottom}>
-        {view ? (
-          <View style={[styles.pill, { backgroundColor: tone.ink }]}>
-            <Text variant="button" style={{ color: tone.onInk }}>
-              {plural(view.members.length, "member")}
-            </Text>
-          </View>
-        ) : null}
-        <Text
-          variant="button"
-          numberOfLines={1}
-          style={[
-            styles.status,
-            {
-              color: tone.ink,
-              fontFamily: needsMe(circle.next) ? font.semibold : font.regular,
-            },
-          ]}
-        >
-          {status}
-        </Text>
-      </View>
+      {view ? (
+        <AvatarStack
+          members={view.members}
+          ringColor={tone.fill}
+          moreColor={tone.ink}
+          moreTextColor={tone.onInk}
+          size={30}
+          max={3}
+        />
+      ) : null}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: radius.card + 4,
-    paddingHorizontal: space.xl,
-    paddingTop: space.xl,
-    paddingBottom: space.gutter,
-    gap: space.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.md,
+    borderRadius: radius.card + 6,
+    paddingHorizontal: space.gutter + 2,
+    paddingTop: space.gutter,
+    paddingBottom: space.gutter + 2,
   },
-  top: { flexDirection: "row", alignItems: "flex-start", gap: space.md },
+  stacked: {
+    marginTop: -STACK_OVERLAP,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: -2 },
+  },
+  covered: { paddingBottom: space.gutter + 2 + STACK_OVERLAP },
+  text: { flex: 1, gap: 2 },
   name: {
-    flex: 1,
-    fontFamily: font.semibold,
-    fontSize: 44,
-    lineHeight: 46,
-    letterSpacing: -2.2,
+    fontFamily: font.medium,
+    fontSize: 30,
+    lineHeight: 34,
+    letterSpacing: -1.5,
   },
-  bottom: { flexDirection: "row", alignItems: "center", gap: space.md },
-  pill: {
-    borderRadius: radius.full,
-    paddingHorizontal: space.md,
-    paddingVertical: space.inline,
-  },
-  status: { flexShrink: 1 },
+  statusRow: { flexDirection: "row", alignItems: "center", gap: space.inline },
+  flag: { width: 8, height: 8, borderRadius: radius.full },
+  status: { flexShrink: 1, fontSize: 15, lineHeight: 20, letterSpacing: -0.4 },
 });

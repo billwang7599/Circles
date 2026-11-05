@@ -56,9 +56,9 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   word: {
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Inter_500Medium",
     fontSize: 34,
     lineHeight: 40,
-    letterSpacing: -1.9,
+    letterSpacing: -1.7,
   },
 });

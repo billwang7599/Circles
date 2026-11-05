@@ -2,11 +2,21 @@ import { router } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 import { AvatarStack } from "../ui/AvatarStack";
 import { Text } from "../ui/Text";
-import { font, radius, space, useTheme } from "../ui/theme";
+import { font, radius, space } from "../ui/theme";
+import { STACK_OVERLAP } from "./CircleCard";
 import { circleInitials, type AgendaItem } from "./agenda";
 
-export function PlanCard({ item }: { item: AgendaItem }) {
-  const { colors } = useTheme();
+export function PlanCard({
+  item,
+  stacked = false,
+  covered = false,
+}: {
+  item: AgendaItem;
+  // Tucks this card under the one before, as the home screen's circles stack.
+  stacked?: boolean;
+  // Another card tucks under this one.
+  covered?: boolean;
+}) {
   const { plan, circle, tone } = item;
   return (
     <Pressable
@@ -17,29 +27,31 @@ export function PlanCard({ item }: { item: AgendaItem }) {
       }
       style={({ pressed }) => [
         styles.card,
-        { backgroundColor: colors.surface, opacity: pressed ? 0.7 : 1 },
+        stacked && styles.stacked,
+        covered && styles.covered,
+        { backgroundColor: tone.fill, opacity: pressed ? 0.92 : 1 },
       ]}
     >
       <View style={styles.text}>
-        <Text variant="headline" numberOfLines={2}>
+        <Text numberOfLines={2} style={[styles.title, { color: tone.ink }]}>
           {plan.title}
         </Text>
-        <Text color="textMuted" numberOfLines={1}>
+        <Text numberOfLines={1} style={{ color: tone.ink, opacity: 0.75 }}>
           {item.when} • {circle.circle.name}
         </Text>
         <View style={styles.people}>
           <AvatarStack
             members={circle.members}
-            ringColor={colors.surface}
-            moreColor={tone.fill}
-            moreTextColor={tone.ink}
+            ringColor={tone.fill}
+            moreColor={tone.ink}
+            moreTextColor={tone.onInk}
             size={24}
             max={6}
           />
         </View>
       </View>
       <View style={[styles.badge, { backgroundColor: tone.ink }]}>
-        <Text style={[styles.badgeText, { color: tone.fill }]}>
+        <Text style={[styles.badgeText, { color: tone.onInk }]}>
           {circleInitials(circle.circle.name)}
         </Text>
       </View>
@@ -52,9 +64,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: space.md,
-    borderRadius: radius.card,
-    paddingHorizontal: space.gutter,
-    paddingVertical: space.lg,
+    borderRadius: radius.card + 6,
+    paddingHorizontal: space.gutter + 2,
+    paddingVertical: space.gutter,
+  },
+  stacked: {
+    marginTop: -STACK_OVERLAP,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: -2 },
+  },
+  covered: { paddingBottom: space.gutter + STACK_OVERLAP },
+  title: {
+    fontFamily: font.medium,
+    fontSize: 24,
+    lineHeight: 28,
+    letterSpacing: -0.8,
   },
   text: { flex: 1, gap: 2 },
   people: { marginTop: space.inline },
@@ -65,9 +91,9 @@ const styles = StyleSheet.create({
     marginTop: space.lg,
   },
   badgeText: {
-    fontFamily: font.semibold,
+    fontFamily: font.medium,
     fontSize: 18,
     lineHeight: 24,
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
   },
 });

@@ -2,7 +2,7 @@ import { Pressable, StyleSheet } from "react-native";
 import { Icon, type IconName } from "./Icon";
 import { radius, space, useTheme } from "./theme";
 
-// The small outlined circle beside a sheet's section titles.
+// The small outlined circle of a screen's top bar.
 export function RoundButton({
   icon,
   label,
@@ -22,8 +22,8 @@ export function RoundButton({
       style={({ pressed }) => [
         styles.round,
         {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
+          backgroundColor: "transparent",
+          borderColor: colors.input,
           opacity: pressed ? 0.7 : 1,
         },
       ]}
@@ -35,10 +35,10 @@ export function RoundButton({
 
 const styles = StyleSheet.create({
   round: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     borderRadius: radius.full,
-    borderWidth: 1,
+    borderWidth: 1.2,
     alignItems: "center",
     justifyContent: "center",
   },

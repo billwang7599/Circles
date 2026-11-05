@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
     ...typeScale.display,
     fontSize: 40,
     lineHeight: 44,
-    letterSpacing: -1.8,
+    letterSpacing: -2.4,
     paddingVertical: space.sm,
     borderBottomWidth: 1.5,
   },

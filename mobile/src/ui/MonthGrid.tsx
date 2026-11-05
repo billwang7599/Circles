@@ -62,7 +62,7 @@ export function MonthHeader({
         accessibilityRole="header"
         numberOfLines={1}
         adjustsFontSizeToFit
-        style={[compact ? typeScale.title : typeScale.display, styles.grow]}
+        style={[compact ? typeScale.heading : typeScale.title, styles.grow]}
       >
         {monthTitle(month)}
       </Text>
@@ -74,7 +74,7 @@ export function MonthHeader({
         style={({ pressed }) => [
           arrow,
           {
-            borderColor: colors.primary,
+            borderColor: colors.input,
             opacity: !canGoBack ? 0.3 : pressed ? 0.7 : 1,
           },
         ]}
@@ -92,8 +92,7 @@ export function MonthHeader({
         style={({ pressed }) => [
           arrow,
           {
-            backgroundColor: colors.primary,
-            borderColor: colors.primary,
+            borderColor: colors.input,
             opacity: pressed ? 0.7 : 1,
           },
         ]}
@@ -101,7 +100,7 @@ export function MonthHeader({
         <Icon
           name="arrow-right"
           size={compact ? 18 : 20}
-          color={colors.primaryForeground}
+          color={colors.foreground}
         />
       </Pressable>
     </View>
@@ -120,8 +119,8 @@ export function MonthGrid({
     <View style={styles.grid}>
       {WEEKDAYS.map((name) => (
         <View key={name} style={styles.cell}>
-          <Text variant="button" style={styles.weekday}>
-            {name}
+          <Text variant="body" color="textMuted" style={styles.weekday}>
+            {name.slice(0, 1)}
           </Text>
         </View>
       ))}
@@ -138,7 +137,8 @@ export function MonthGrid({
   );
 }
 
-// A day's number in its round: filled when chosen, ringed for today.
+// A day's number in its round: filled when chosen, ringed dark for today,
+// faintly ringed otherwise, and bare when it cannot be picked.
 export function DayNumber({
   day,
   filled = false,
@@ -158,8 +158,10 @@ export function DayNumber({
         filled
           ? { backgroundColor: colors.primary }
           : ringed
-            ? { borderWidth: 1.5, borderColor: colors.primary }
-            : null,
+            ? { borderWidth: 2, borderColor: colors.primary }
+            : muted
+              ? null
+              : { borderWidth: 1, borderColor: colors.border },
       ]}
     >
       <Text
@@ -188,24 +190,24 @@ const styles = StyleSheet.create({
   monthRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
   grow: { flex: 1 },
   arrow: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 40,
     borderRadius: radius.full,
-    borderWidth: 1.5,
+    borderWidth: 1.2,
     alignItems: "center",
     justifyContent: "center",
   },
   arrowCompact: {
-    width: 36,
+    width: 44,
     height: 36,
     borderRadius: radius.full,
-    borderWidth: 1.5,
+    borderWidth: 1.2,
     alignItems: "center",
     justifyContent: "center",
   },
   grid: { flexDirection: "row", flexWrap: "wrap", rowGap: space.xs },
   cell: { width: `${100 / 7}%`, alignItems: "center" },
-  weekday: { fontFamily: font.medium },
+  weekday: { paddingBottom: space.xs },
   number: {
     width: daySize,
     height: daySize,
@@ -214,9 +216,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   numberText: {
-    fontFamily: font.medium,
-    fontSize: 28,
-    lineHeight: 34,
-    letterSpacing: -1.2,
+    fontFamily: font.regular,
+    fontSize: 17,
+    lineHeight: 22,
+    letterSpacing: -0.4,
   },
 });

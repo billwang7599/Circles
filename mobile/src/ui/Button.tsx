@@ -31,7 +31,7 @@ export function Button({
   style,
 }: Props) {
   const { colors } = useTheme();
-  const background = variant === "primary" ? colors.primary : colors.control;
+  const background = variant === "primary" ? colors.primary : "transparent";
   const foreground = {
     primary: colors.primaryForeground,
     secondary: colors.foreground,
@@ -50,7 +50,12 @@ export function Button({
         small ? styles.small : styles.default,
         {
           backgroundColor: background,
-          borderColor: variant === "primary" ? "transparent" : colors.input,
+          borderColor:
+            variant === "primary"
+              ? "transparent"
+              : variant === "destructive"
+                ? colors.danger
+                : colors.input,
           opacity: inactive ? 0.5 : pressed ? 0.7 : 1,
         },
         style,
@@ -77,7 +82,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: space.sm,
-    borderWidth: 1.5,
+    borderWidth: 1.2,
     borderRadius: radius.full,
     paddingHorizontal: space.xl,
   },

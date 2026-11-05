@@ -25,7 +25,7 @@ export function Field({ label, icon, prefix, error, style, ...input }: Props) {
           styles.box,
           {
             backgroundColor: colors.control,
-            borderColor: error ? colors.danger : colors.input,
+            borderColor: error ? colors.danger : colors.border,
           },
         ]}
       >
@@ -69,9 +69,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: space.xs,
-    borderRadius: radius.xxl,
-    borderWidth: 1.5,
-    paddingHorizontal: space.lg,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    paddingHorizontal: space.gutter,
   },
   prefix: { fontSize: 17 },
   input: {

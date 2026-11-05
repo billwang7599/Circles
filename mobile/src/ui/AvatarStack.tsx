@@ -78,5 +78,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  moreText: { fontFamily: font.medium, letterSpacing: -0.5 },
+  moreText: { fontFamily: font.medium, letterSpacing: -0.7 },
 });

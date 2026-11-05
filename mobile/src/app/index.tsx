@@ -11,10 +11,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { isRefusal, useCircles, useMe } from "../api";
-import { agenda, isOver } from "../home/agenda";
+import { agenda, isOver, needsMe } from "../home/agenda";
 import { Calendar } from "../home/Calendar";
-import { CircleCard } from "../home/CircleCard";
-import { Hero } from "../home/Hero";
+import { CircleTile } from "../home/CircleTile";
+import { FeaturedPlans } from "../home/FeaturedPlans";
+import { Stat } from "../home/Hero";
 import { Logo } from "../home/Logo";
 import { Tabs } from "../home/Tabs";
 import { setProfileName, useProfileName } from "../profile";
@@ -23,7 +24,7 @@ import { Button } from "../ui/Button";
 import { Empty } from "../ui/Empty";
 import { ErrorState } from "../ui/ErrorState";
 import { Field } from "../ui/Field";
-import { Icon, type IconName } from "../ui/Icon";
+import { RoundButton } from "../ui/RoundButton";
 import { Screen } from "../ui/Screen";
 import { Text } from "../ui/Text";
 import { radius, size, space, useTheme } from "../ui/theme";
@@ -66,6 +67,17 @@ export default function Home() {
   }
 
   const loading = !me.data || isRefusal(me.error);
+  const stats = [
+    {
+      value: items.filter((item) => !isOver(item.plan)).length,
+      label: "upcoming",
+    },
+    {
+      value: circles.filter((circle) => needsMe(circle.next)).length,
+      label: "need you",
+    },
+    { value: circles.length, label: "circles" },
+  ];
 
   return (
     <ScrollView
@@ -120,9 +132,16 @@ export default function Home() {
         </View>
       ) : (
         <>
-          <View style={[styles.column, styles.hero]}>
-            <Hero
-              items={items.filter((item) => !isOver(item.plan)).slice(0, 3)}
+          <View style={[styles.column, styles.body]}>
+            <View style={styles.stats}>
+              {stats.map((stat) => (
+                <Stat key={stat.label} {...stat} />
+              ))}
+            </View>
+            <FeaturedPlans
+              items={items
+                .filter((item) => item.plan.phase.kind === "locked")
+                .slice(0, 3)}
             />
           </View>
           <View
@@ -162,7 +181,7 @@ export default function Home() {
               ) : (
                 <View style={styles.cards}>
                   {circles.map((circle) => (
-                    <CircleCard
+                    <CircleTile
                       key={circle.id}
                       circle={circle}
                       view={viewOf(circle.id)}
@@ -176,36 +195,6 @@ export default function Home() {
         </>
       )}
     </ScrollView>
-  );
-}
-
-function RoundButton({
-  icon,
-  label,
-  onPress,
-}: {
-  icon: IconName;
-  label: string;
-  onPress: () => void;
-}) {
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      hitSlop={space.xs}
-      style={({ pressed }) => [
-        styles.round,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          opacity: pressed ? 0.7 : 1,
-        },
-      ]}
-    >
-      <Icon name={icon} size={18} color={colors.foreground} />
-    </Pressable>
   );
 }
 
@@ -259,12 +248,27 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: space.md,
     paddingHorizontal: space.gutter,
     paddingTop: space.md,
   },
-  tabs: { paddingHorizontal: space.gutter, paddingTop: space.xl },
-  hero: { paddingTop: space.xxl + space.sm, paddingBottom: space.xxl },
-  calendar: { paddingTop: space.xxl + space.sm },
+  tabs: { paddingHorizontal: space.gutter, paddingTop: space.lg },
+  // The featured plans pad their own pages, so the body adds no sides.
+  body: { paddingTop: space.xl, paddingBottom: space.xxl, gap: space.xl },
+  calendar: { paddingTop: space.xxl },
+  section: { gap: space.md },
+  sectionTitle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+    paddingLeft: space.xs,
+  },
+  grow: { flex: 1 },
+  stats: {
+    flexDirection: "row",
+    gap: space.xxl,
+    paddingHorizontal: space.gutter,
+  },
   sheet: {
     flexGrow: 1,
     borderTopLeftRadius: radius.sheet,
@@ -279,15 +283,6 @@ const styles = StyleSheet.create({
     paddingLeft: space.sm,
     paddingRight: space.xs,
     paddingBottom: space.xs,
-  },
-  grow: { flex: 1 },
-  round: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
   },
   cards: { gap: space.sm },
   welcome: { gap: space.xl },
