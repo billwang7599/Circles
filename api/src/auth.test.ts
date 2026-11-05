@@ -7,7 +7,6 @@ const cognito = {
   NODE_ENV: "production",
   COGNITO_USER_POOL_ID: "ca-central-1_Example",
   COGNITO_CLIENT_ID: "client",
-  COGNITO_DOMAIN: "circles.auth.ca-central-1.amazoncognito.com",
 };
 
 afterEach(() => vi.unstubAllGlobals());
@@ -58,13 +57,12 @@ test("without Cognito settings, development uses dev tokens and production refus
     ...cognito,
     COGNITO_USER_POOL_ID: "",
     COGNITO_CLIENT_ID: "",
-    COGNITO_DOMAIN: "",
   };
   expect(verifierFor({ ...none, NODE_ENV: "development" })).toBe(devVerifier);
   expect(() => verifierFor(none)).toThrow(/COGNITO_USER_POOL_ID/);
   expect(() =>
-    verifierFor({ ...cognito, NODE_ENV: "development", COGNITO_DOMAIN: "" }),
-  ).toThrow(/COGNITO_DOMAIN/);
+    verifierFor({ ...cognito, NODE_ENV: "development", COGNITO_CLIENT_ID: "" }),
+  ).toThrow(/COGNITO_CLIENT_ID/);
   expect(verifierFor(cognito)).not.toBe(devVerifier);
 });
 
@@ -82,14 +80,27 @@ test("the Cognito verifier refuses tokens it didn't issue", async () => {
   expect(await verifier.sub(foreign)).toBeUndefined();
 });
 
-test("the Cognito verifier reads the email from the userInfo endpoint", async () => {
+test("the Cognito verifier reads the email from Cognito's GetUser", async () => {
   const fetch = vi.fn(async () =>
-    Response.json({ sub: "s", email: "ana@example.com" }),
+    Response.json({
+      Username: "s",
+      UserAttributes: [
+        { Name: "sub", Value: "s" },
+        { Name: "email", Value: "ana@example.com" },
+      ],
+    }),
   );
   vi.stubGlobal("fetch", fetch);
   expect(await verifierFor(cognito).email("access")).toBe("ana@example.com");
   expect(fetch).toHaveBeenCalledWith(
-    `https://${cognito.COGNITO_DOMAIN}/oauth2/userInfo`,
-    { headers: { authorization: "Bearer access" } },
+    "https://cognito-idp.ca-central-1.amazonaws.com/",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-amz-json-1.1",
+        "x-amz-target": "AWSCognitoIdentityProviderService.GetUser",
+      },
+      body: JSON.stringify({ AccessToken: "access" }),
+    },
   );
 });

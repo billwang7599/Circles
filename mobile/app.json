@@ -43,8 +43,7 @@
         }
       ],
       "expo-secure-store",
-      "expo-font",
-      "expo-web-browser"
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,

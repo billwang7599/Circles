@@ -28,38 +28,37 @@ Options need two people in. Alone, press `w` for the browser build, sign in ther
 circle with its code.
 
 **Sign-in**
-The app signs people in through Amazon Cognito's managed login, which emails a one-time code (Authorization Code with
-PKCE), and sends the access token to the API as a Bearer token. The API verifies it with `aws-jwt-verify` and keys
-`accounts` on the token's `sub`; on someone's first request it reads their email from Cognito's `userInfo` endpoint.
+The app signs people in on its own screens by calling Amazon Cognito's user-pool API in `ca-central-1`. There's one flow
+for new and returning people: the app asks only for an email, and Cognito emails a one-time code (`USER_AUTH` with
+`EMAIL_OTP`). If Cognito doesn't know the email, the app signs it up with no password and the emailed code confirms the
+address and signs in; an account that never confirmed gets a new confirmation code. Telling an unknown email apart needs
+the app client's `PreventUserExistenceErrors: LEGACY`. The app keeps the refresh token in SecureStore and sends the
+access token to the API as a Bearer token. The API verifies it with `aws-jwt-verify` and keys `accounts` on the token's
+`sub`; on someone's first request it reads their email with Cognito's `GetUser`. There's no browser or redirect, so Expo
+Go (simulator or phone) and Expo web now work with real sign-in.
 
 Locally you don't need Cognito: with the `COGNITO_*` values empty (as in `api/.env.example`) the API accepts
-`dev:<email>` tokens, the same way it falls back to the fake planner, and the app, without `EXPO_PUBLIC_COGNITO_*`
-values, shows a dev sign-in that asks only for an email. Any address works and each one is its own account. Tests use
-the same dev tokens. In production the API refuses to start without the `COGNITO_*` values.
+`dev:<email>` tokens, the same way it falls back to the fake planner, and the app, without
+`EXPO_PUBLIC_COGNITO_CLIENT_ID`, shows a dev sign-in that asks only for an email. Any address works and each one is its
+own account. Tests use the same dev tokens. In production the API refuses to start without the `COGNITO_*` values.
 
 To sign in for real, fill these from the `circles-auth` stack outputs (below) in `api/.env`:
 
 ```
 COGNITO_USER_POOL_ID=ca-central-1_...
 COGNITO_CLIENT_ID=...
-COGNITO_DOMAIN=circles.auth.ca-central-1.amazoncognito.com
 ```
 
 and in `mobile/.env` (copy `mobile/.env.example`), then restart Expo with `npx expo start --clear`:
 
 ```
 EXPO_PUBLIC_COGNITO_CLIENT_ID=...
-EXPO_PUBLIC_COGNITO_DOMAIN=circles.auth.ca-central-1.amazoncognito.com
 ```
 
-Cognito only sends sign-in back to the redirects it knows: the dev build (`circles://sign-in`), Expo web on
-`http://localhost:8081` and Expo Go on the iOS simulator when Metro runs with `npx expo start --localhost`
-(`exp://127.0.0.1:8081/--/sign-in`). Expo Go on a real phone gets a LAN address Cognito doesn't know, so use a dev build
-there (`npx expo run:ios --device`). Sign-in added native modules, so rebuild the dev app once with
-`npm run ios -w mobile`.
-
-Cognito can't turn passwords off: its sign-up page asks for one, and sign-in offers the email code or the password.
-While SES is in its sandbox, codes only reach verified addresses.
+A sign-in code must be entered within 3 minutes (the app client's `AuthSessionValidity`); after that the app asks for a
+new one. The pool still allows passwords, since Cognito rejects a sign-in policy without one, but accounts made in the
+app have none. The managed login domain and its callback URLs in `infra/auth.yml` only serve builds from before in-app
+sign-in.
 
 The user pool, managed login domain and app client are in `infra/auth.yml`. Deploy or update them with:
 
@@ -106,5 +105,6 @@ the fakes.
 **CI and deployment**
 Every push to any branch runs CI: lint, typecheck, tests and build for every workspace. A push to `main` that touches
 `api/`, `shared/`, the root `package.json` or lockfile, or the workflows also deploys the API to AWS (image to ECR, then
-ECS in `ca-central-1`). The ECS service needs the three `COGNITO_*` values or the API won't start. `web/` is never
-deployed. Phones point at the AWS API via `EXPO_PUBLIC_API_URL`.
+ECS in `ca-central-1`). The ECS service needs `COGNITO_USER_POOL_ID` and `COGNITO_CLIENT_ID` or the API won't start.
+`web/` is never deployed. Phones point at the AWS API via `EXPO_PUBLIC_API_URL`. EAS `preview` and `production` builds
+get it and `EXPO_PUBLIC_COGNITO_CLIENT_ID` from `env` in `mobile/eas.json`.
