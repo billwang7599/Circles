@@ -26,7 +26,6 @@ const env = z
     GOOGLE_PLACES_MAX_REQUESTS: z.coerce.number().int().positive().default(100),
     COGNITO_USER_POOL_ID: z.string().default(""),
     COGNITO_CLIENT_ID: z.string().default(""),
-    COGNITO_DOMAIN: z.string().default(""),
   })
   .parse(process.env);
 

@@ -29,12 +29,11 @@ export function verifierFor({
   NODE_ENV,
   COGNITO_USER_POOL_ID,
   COGNITO_CLIENT_ID,
-  COGNITO_DOMAIN,
 }: Record<
-  "NODE_ENV" | "COGNITO_USER_POOL_ID" | "COGNITO_CLIENT_ID" | "COGNITO_DOMAIN",
+  "NODE_ENV" | "COGNITO_USER_POOL_ID" | "COGNITO_CLIENT_ID",
   string
 >): Verifier {
-  const settings = { COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, COGNITO_DOMAIN };
+  const settings = { COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID };
   const missing = Object.entries(settings)
     .filter(([, value]) => !value)
     .map(([name]) => name);
@@ -51,6 +50,7 @@ export function verifierFor({
     clientId: COGNITO_CLIENT_ID,
     tokenUse: "access",
   });
+  const region = COGNITO_USER_POOL_ID.split("_")[0];
   return {
     async sub(token) {
       try {
@@ -61,12 +61,25 @@ export function verifierFor({
         throw err;
       }
     },
+    // The app signs in through the user-pool API, whose tokens userInfo refuses (no openid scope).
     async email(token) {
-      const res = await fetch(`https://${COGNITO_DOMAIN}/oauth2/userInfo`, {
-        headers: { authorization: `Bearer ${token}` },
+      const res = await fetch(`https://cognito-idp.${region}.amazonaws.com/`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-amz-json-1.1",
+          "x-amz-target": "AWSCognitoIdentityProviderService.GetUser",
+        },
+        body: JSON.stringify({ AccessToken: token }),
       });
-      if (!res.ok) throw new Error(`userInfo answered ${res.status}`);
-      return z.object({ email: Email }).parse(await res.json()).email;
+      if (!res.ok) throw new Error(`GetUser answered ${res.status}`);
+      const { UserAttributes } = z
+        .object({
+          UserAttributes: z.array(
+            z.object({ Name: z.string(), Value: z.string() }),
+          ),
+        })
+        .parse(await res.json());
+      return Email.parse(UserAttributes.find((a) => a.Name === "email")?.Value);
     },
   };
 }

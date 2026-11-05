@@ -10,15 +10,11 @@ import {
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SystemUI from "expo-system-ui";
-import { maybeCompleteAuthSession } from "expo-web-browser";
 import { useEffect } from "react";
 import { AppState, StatusBar } from "react-native";
 import { isRefusal } from "../api";
 import { useSignedIn } from "../session";
 import { typeScale, useTheme } from "../ui/theme";
-
-// On web, managed login redirects its popup here; this hands the result to the opener.
-maybeCompleteAuthSession();
 
 // A link opened cold still gets Home underneath, so Back has somewhere to go.
 export const unstable_settings = { anchor: "index" };

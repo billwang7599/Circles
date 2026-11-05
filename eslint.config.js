@@ -10,5 +10,7 @@ export default defineConfig(
     extends: [expo],
     settings: { react: { version: "19" } },
   },
+  // eslint-plugin-import's resolver crashes reading vitest's type re-exports.
+  { files: ["mobile/**/*.test.ts"], rules: { "import/namespace": "off" } },
   { files: ["api/**"], rules: { "no-console": "error" } },
 );
