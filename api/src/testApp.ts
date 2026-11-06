@@ -43,24 +43,40 @@ export async function testApp(
     });
   }
 
-  async function membership(path: string, data: unknown, token = newToken()) {
-    const res = await call("POST", path, token, data);
+  async function named(displayName: string, token = newToken()) {
+    const res = await call("PUT", "/api/me/name", token, { displayName });
+    expect(res.status).toBe(200);
+    return token;
+  }
+
+  async function membership(
+    path: string,
+    data: unknown,
+    displayName: string,
+    token?: string,
+  ) {
+    const signedUp = await named(displayName, token);
+    const res = await call("POST", path, signedUp, data);
     expect(res.status).toBe(201);
-    return { ...((await res.json()) as MembershipResponse), token };
+    return {
+      ...((await res.json()) as MembershipResponse),
+      token: signedUp,
+    };
   }
 
   const createCircle = (name: string, memberName: string) =>
-    membership("/api/circles", { name, memberName });
+    membership("/api/circles", { name }, memberName);
 
   async function circleWith(...names: string[]) {
     const [first, ...rest] = names;
     const created = await createCircle("Dinner club", first);
     const tokens = [created.token];
     for (const name of rest) {
-      const joined = await membership("/api/circles/join", {
-        code: created.circle.joinCode,
+      const joined = await membership(
+        "/api/circles/join",
+        { code: created.circle.joinCode },
         name,
-      });
+      );
       tokens.push(joined.token);
     }
     return { circleId: created.circle.id, tokens };
@@ -106,6 +122,7 @@ export async function testApp(
     app,
     db,
     call,
+    named,
     membership,
     createCircle,
     circleWith,

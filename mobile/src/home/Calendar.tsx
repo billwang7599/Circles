@@ -1,44 +1,44 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { formatDay } from "../dates";
+import { formatDay, todayKey } from "../dates";
 import {
   addMonths,
   DayNumber,
-  dayKey,
   MonthGrid,
   MonthHeader,
   monthOf,
 } from "../ui/MonthGrid";
+import { IconButton } from "../ui/IconButton";
 import { Text } from "../ui/Text";
-import { radius, space, useTheme } from "../ui/theme";
-import type { AgendaItem } from "./agenda";
+import { radius, space } from "../ui/theme";
+import { comingUp, needsYou, type AgendaItem } from "./agenda";
+import { EventList } from "./EventRow";
 import { PlanCard } from "./PlanCard";
 
-function today() {
-  const now = new Date();
-  return dayKey(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
+// The month, then one area under it: the chosen day's plans, or what is coming
+// up when no day is chosen. What needs me follows.
 export function Calendar({ items }: { items: AgendaItem[] }) {
-  const { colors } = useTheme();
-  const [selected, setSelected] = useState(today);
-  const [month, setMonth] = useState(() => monthOf(selected));
+  const today = todayKey();
+  const [selected, setSelected] = useState<string | null>(null);
+  const [month, setMonth] = useState(() => monthOf(today));
 
   const byDay = new Map<string, AgendaItem[]>();
   for (const item of items)
     byDay.set(item.day, [...(byDay.get(item.day) ?? []), item]);
-  const selectedItems = byDay.get(selected) ?? [];
-  const todayKey = today();
+  const selectedItems = selected ? (byDay.get(selected) ?? []) : [];
+  const waiting = needsYou(items);
+  const ahead = comingUp(items);
 
   return (
-    <View style={styles.calendar}>
-      <View style={[styles.panel, { backgroundColor: colors.card }]}>
+    <View style={styles.events}>
+      <View style={styles.month}>
         <MonthHeader
+          large
           month={month}
           onMove={(by) => setMonth((current) => addMonths(current, by))}
         />
-
         <MonthGrid
+          large
           month={month}
           renderDay={(key, day) => {
             const dayItems = byDay.get(key) ?? [];
@@ -54,13 +54,16 @@ export function Calendar({ items }: { items: AgendaItem[] }) {
                 accessibilityLabel={`${formatDay(key)}${
                   dayItems.length ? `, ${dayItems.length} plans` : ""
                 }`}
-                onPress={() => setSelected(key)}
+                onPress={() =>
+                  setSelected((current) => (current === key ? null : key))
+                }
                 style={styles.cell}
               >
                 <DayNumber
+                  large
                   day={day}
                   filled={key === selected}
-                  ringed={key === todayKey}
+                  ringed={key === today}
                 />
                 <View style={styles.dots}>
                   {tones.map((tone) => (
@@ -76,43 +79,54 @@ export function Calendar({ items }: { items: AgendaItem[] }) {
         />
       </View>
 
-      <View style={styles.day}>
-        <View>
-          <Text color="textMuted">Selected day</Text>
-          <Text variant="title" style={styles.dayTitle}>
-            {formatDay(selected)}
-          </Text>
-        </View>
-        {selectedItems.length === 0 ? (
-          <Text color="textMuted">Nothing planned</Text>
-        ) : (
-          <View>
-            {selectedItems.map((item, index) => (
-              <PlanCard
-                key={item.plan.id}
-                item={item}
-                stacked={index > 0}
-                covered={index < selectedItems.length - 1}
-              />
-            ))}
+      {selected ? (
+        <View style={styles.day}>
+          <View style={styles.dayTitle}>
+            <View style={styles.grow}>
+              <Text color="textMuted">Selected day</Text>
+              <Text variant="cardTitle">{formatDay(selected)}</Text>
+            </View>
+            <IconButton
+              icon="xmark"
+              label="Clear selected day"
+              onPress={() => setSelected(null)}
+            />
           </View>
-        )}
-      </View>
+          {selectedItems.length === 0 ? (
+            <Text color="textMuted">Nothing planned</Text>
+          ) : (
+            <View>
+              {selectedItems.map((item, index) => (
+                <PlanCard
+                  key={item.plan.id}
+                  item={item}
+                  stacked={index > 0}
+                  covered={index < selectedItems.length - 1}
+                />
+              ))}
+            </View>
+          )}
+        </View>
+      ) : ahead.length > 0 ? (
+        <EventList title="Coming up" items={ahead} />
+      ) : waiting.length === 0 ? (
+        <Text variant="strong">Nothing coming up</Text>
+      ) : null}
+
+      {waiting.length > 0 ? (
+        <EventList title="Needs you" items={waiting} />
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  calendar: { gap: space.xl, paddingHorizontal: space.gutter },
-  panel: {
-    borderRadius: radius.card + 6,
-    padding: space.lg,
-    paddingTop: space.gutter,
-    gap: space.lg,
-  },
-  cell: { alignSelf: "stretch", alignItems: "center", gap: 3 },
-  dots: { flexDirection: "row", gap: 3, height: 8 },
-  dot: { width: 8, height: 8, borderRadius: radius.full },
-  day: { gap: space.md, paddingHorizontal: space.xs },
-  dayTitle: { marginTop: 2 },
+  events: { gap: space.xxl, paddingHorizontal: space.gutter },
+  month: { gap: space.gutter },
+  cell: { alignSelf: "stretch", alignItems: "center", gap: 3, height: 46 },
+  dots: { flexDirection: "row", gap: 2, height: 5 },
+  dot: { width: 5, height: 5, borderRadius: radius.full },
+  day: { gap: space.md },
+  dayTitle: { flexDirection: "row", alignItems: "center", gap: space.sm },
+  grow: { flex: 1 },
 });

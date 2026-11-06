@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AreaId } from "./areas.ts";
 import type { AvatarColor, MemberSummary } from "./circle.ts";
+import type { FreeSlot } from "./defaults.ts";
 import { PreferenceId } from "./preferences.ts";
 import { daysBetween, maxWindowDays, Part, type Interval } from "./time.ts";
 
@@ -147,7 +148,11 @@ export type PlanView = {
   me: {
     id: string;
     registration?: RegistrationInput;
-    defaults: { budgetCents?: number; preferences: PreferenceId[] };
+    defaults: {
+      budgetCents?: number;
+      preferences: PreferenceId[];
+      availability: FreeSlot[];
+    };
   };
   options: OptionView[];
 };

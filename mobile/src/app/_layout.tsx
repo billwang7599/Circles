@@ -35,6 +35,14 @@ focusManager.setEventListener((setFocused) => {
   return () => subscription.remove();
 });
 
+// Routes rather than overlays, so a shared /join?code= link still lands here.
+const dialog = {
+  presentation: "transparentModal",
+  animation: "fade",
+  headerShown: false,
+  contentStyle: { backgroundColor: "transparent" },
+} as const;
+
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Inter_300Light,
@@ -74,9 +82,12 @@ export default function RootLayout() {
       >
         <Stack.Protected guard={signedIn}>
           <Stack.Screen name="index" options={{ title: "Circles" }} />
-          <Stack.Screen name="settings" options={{ title: "Settings" }} />
-          <Stack.Screen name="join" options={{ title: "Join a circle" }} />
-          <Stack.Screen name="circles/new" options={{ title: "New circle" }} />
+          <Stack.Screen
+            name="defaults"
+            options={{ title: "Defaults", headerShadowVisible: true }}
+          />
+          <Stack.Screen name="join" options={dialog} />
+          <Stack.Screen name="circles/new" options={dialog} />
           <Stack.Screen
             name="circles/[circleId]/index"
             options={{ title: "" }}

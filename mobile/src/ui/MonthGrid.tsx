@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { Icon } from "./Icon";
+import { Icon, type IconName } from "./Icon";
 import { Text } from "./Text";
 import { font, radius, space, typeScale, useTheme } from "./theme";
 
@@ -47,15 +47,42 @@ export function MonthHeader({
   onMove,
   canGoBack = true,
   compact = false,
+  large = false,
 }: {
   month: Month;
   onMove: (by: number) => void;
   canGoBack?: boolean;
   // A smaller heading, for a calendar that sits inside a form.
   compact?: boolean;
+  // The heading that opens the Calendar tab, with filled arrows.
+  large?: boolean;
 }) {
   const { colors } = useTheme();
   const arrow = compact ? styles.arrowCompact : styles.arrow;
+  if (large)
+    return (
+      <View style={styles.monthRow}>
+        <Text
+          accessibilityRole="header"
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          variant="month"
+          style={styles.grow}
+        >
+          {monthTitle(month)}
+        </Text>
+        <LargeArrow
+          icon="arrow-left"
+          label="Previous month"
+          onPress={() => onMove(-1)}
+        />
+        <LargeArrow
+          icon="arrow-right"
+          label="Next month"
+          onPress={() => onMove(1)}
+        />
+      </View>
+    );
   return (
     <View style={styles.monthRow}>
       <Text
@@ -107,21 +134,54 @@ export function MonthHeader({
   );
 }
 
+function LargeArrow({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: IconName;
+  label: string;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={space.xs}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.largeArrow,
+        { backgroundColor: colors.primary, opacity: pressed ? 0.7 : 1 },
+      ]}
+    >
+      <Icon name={icon} size={16} color={colors.primaryForeground} />
+    </Pressable>
+  );
+}
+
 // Weekday heads over the month's days; each day draws itself.
 export function MonthGrid({
   month,
   renderDay,
+  large = false,
 }: {
   month: Month;
   renderDay: (key: string, day: number) => ReactNode;
+  // Whole weekday names, for the calendar that opens the Calendar tab.
+  large?: boolean;
 }) {
   return (
-    <View style={styles.grid}>
+    <View style={[styles.grid, large && styles.largeGrid]}>
       {WEEKDAYS.map((name) => (
         <View key={name} style={styles.cell}>
-          <Text variant="body" color="textMuted" style={styles.weekday}>
-            {name.slice(0, 1)}
-          </Text>
+          {large ? (
+            <Text style={styles.largeWeekday}>{name}</Text>
+          ) : (
+            <Text variant="body" color="textMuted" style={styles.weekday}>
+              {name.slice(0, 1)}
+            </Text>
+          )}
         </View>
       ))}
       {monthCells(month.year, month.month).map((day, index) =>
@@ -144,22 +204,25 @@ export function DayNumber({
   filled = false,
   ringed = false,
   muted = false,
+  large = false,
 }: {
   day: number;
   filled?: boolean;
   ringed?: boolean;
   muted?: boolean;
+  // A bigger number in a tighter round, bare unless chosen or today.
+  large?: boolean;
 }) {
   const { colors } = useTheme();
   return (
     <View
       style={[
-        styles.number,
+        large ? styles.largeNumber : styles.number,
         filled
           ? { backgroundColor: colors.primary }
           : ringed
-            ? { borderWidth: 2, borderColor: colors.primary }
-            : muted
+            ? { borderWidth: large ? 1.5 : 2, borderColor: colors.primary }
+            : muted || large
               ? null
               : { borderWidth: 1, borderColor: colors.border },
       ]}
@@ -167,7 +230,8 @@ export function DayNumber({
       <Text
         allowFontScaling={false}
         style={[
-          styles.numberText,
+          large ? styles.largeNumberText : styles.numberText,
+          large && filled && styles.largeNumberFilled,
           {
             color: filled
               ? colors.primaryForeground
@@ -205,7 +269,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  largeArrow: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.full,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   grid: { flexDirection: "row", flexWrap: "wrap", rowGap: space.xs },
+  largeGrid: { rowGap: space.md },
+  largeWeekday: {
+    fontFamily: font.semibold,
+    fontSize: 14,
+    lineHeight: 18,
+    letterSpacing: -0.28,
+  },
   cell: { width: `${100 / 7}%`, alignItems: "center" },
   weekday: { paddingBottom: space.xs },
   number: {
@@ -215,6 +293,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  largeNumber: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.full,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  largeNumberText: {
+    fontFamily: font.medium,
+    fontSize: 21,
+    lineHeight: 26,
+    letterSpacing: -0.84,
+  },
+  largeNumberFilled: { fontFamily: font.bold },
   numberText: {
     fontFamily: font.regular,
     fontSize: 17,

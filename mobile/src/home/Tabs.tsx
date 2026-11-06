@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "../ui/Text";
-import { radius, space, useTheme } from "../ui/theme";
+import { radius, space, typeScale, useTheme } from "../ui/theme";
 
 type Props<T extends string> = {
   tabs: readonly { id: T; label: string }[];
@@ -35,14 +35,14 @@ export function Tabs<T extends string>({
               compact && styles.compact,
               {
                 backgroundColor: selected ? colors.primary : "transparent",
-                borderColor: selected ? colors.primary : colors.input,
+                borderColor: selected ? colors.primary : colors.foreground,
                 opacity: pressed ? 0.7 : 1,
               },
             ]}
           >
             <Text
-              variant="button"
               style={{
+                ...styles.label,
                 color: selected ? colors.primaryForeground : colors.foreground,
               }}
             >
@@ -59,13 +59,14 @@ const styles = StyleSheet.create({
   tabs: { flexDirection: "row", gap: space.sm },
   tab: {
     minWidth: 96,
-    height: 44,
-    paddingHorizontal: space.gutter,
+    height: 40,
+    paddingHorizontal: space.xl,
     borderRadius: radius.full,
-    borderWidth: 1.2,
+    borderWidth: 1.25,
     alignItems: "center",
     justifyContent: "center",
   },
+  label: { ...typeScale.label, fontSize: 16, letterSpacing: -0.24 },
   compactTabs: { gap: space.sm },
   compact: { minWidth: 0, height: 40, paddingHorizontal: space.lg + 2 },
 });

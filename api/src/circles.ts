@@ -1,8 +1,11 @@
 import { randomInt } from "node:crypto";
 import {
   type AvatarColor,
+  type CircleEmoji,
   CreateCircle,
+  Defaults,
   JoinCircle,
+  NO_DEFAULTS,
   nextMove,
   type CircleSummary,
   type CircleView,
@@ -11,6 +14,7 @@ import {
   type MembershipResponse,
   type NextPlan,
   type PlanPhase,
+  UpdateName,
 } from "@circles/shared";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -29,13 +33,19 @@ function joinCode() {
   ).join("");
 }
 
-async function createCircle(db: Db, name: string): Promise<CircleSummary> {
+const circleColumns = 'id, name, join_code as "joinCode", emoji';
+
+async function createCircle(
+  db: Db,
+  name: string,
+  emoji: CircleEmoji | undefined,
+): Promise<CircleSummary> {
   for (;;) {
     const [circle] = await db.query<CircleSummary>(
-      `insert into circles (name, join_code) values ($1, $2)
+      `insert into circles (name, join_code, emoji) values ($1, $2, $3)
        on conflict (join_code) do nothing
-       returning id, name, join_code as "joinCode"`,
-      [name, joinCode()],
+       returning ${circleColumns}`,
+      [name, joinCode(), emoji ?? null],
     );
     if (circle) return circle;
   }
@@ -43,8 +53,18 @@ async function createCircle(db: Db, name: string): Promise<CircleSummary> {
 
 const conflicts: Record<string, string> = {
   members_one_per_account: "You're already in this circle",
-  members_unique_name: "Someone in this circle already uses that name",
 };
+
+// The name an account enters circles under.
+async function nameOf(db: Db, accountId: string): Promise<string> {
+  const [{ displayName }] = await db.query<{ displayName: string | null }>(
+    'select display_name as "displayName" from accounts where id = $1',
+    [accountId],
+  );
+  if (!displayName)
+    throw new HTTPException(409, { message: "Add your name first" });
+  return displayName;
+}
 
 async function addMember(
   db: Db,
@@ -68,7 +88,7 @@ async function addMember(
     if (message) throw new HTTPException(409, { message });
     // The circle was removed while this join was in flight.
     if (constraint === "members_circle_id_fkey")
-      throw new HTTPException(404, { message: "No circle has that code" });
+      throw new HTTPException(404, { message: "No circle matches that code." });
     throw err;
   }
 }
@@ -114,32 +134,39 @@ export function circles(db: Db) {
   const app = new Hono<AppEnv>();
 
   app.post("/circles", async (c) => {
-    const { name, memberName } = await body(c, CreateCircle);
-    const circle = await createCircle(db, name);
+    const { name, emoji } = await body(c, CreateCircle);
+    const memberName = await nameOf(db, account(c));
+    const circle = await createCircle(db, name, emoji);
     const member = await addMember(db, account(c), circle.id, memberName);
     return c.json({ circle, member } satisfies MembershipResponse, 201);
   });
 
   app.post("/circles/join", async (c) => {
-    const { code, name } = await body(c, JoinCircle);
+    const { code } = await body(c, JoinCircle);
+    const name = await nameOf(db, account(c));
     const [circle] = await db.query<CircleSummary>(
-      'select id, name, join_code as "joinCode" from circles where join_code = $1',
+      `select ${circleColumns} from circles where join_code = $1`,
       [code],
     );
     if (!circle)
-      throw new HTTPException(404, { message: "No circle has that code" });
+      throw new HTTPException(404, { message: "No circle matches that code." });
     const member = await addMember(db, account(c), circle.id, name);
     return c.json({ circle, member } satisfies MembershipResponse, 201);
   });
 
   app.get("/me", async (c) => {
     const accountId = account(c);
-    const [{ email }] = await db.query<{ email: string }>(
-      "select email from accounts where id = $1",
+    const [{ email, displayName, color }] = await db.query<{
+      email: string;
+      displayName: string | null;
+      color: AvatarColor;
+    }>(
+      `select email, display_name as "displayName", color
+       from accounts where id = $1`,
       [accountId],
     );
     const circles = await db.query<Omit<Me["circles"][number], "next">>(
-      `select c.id, c.name, m.id as "memberId", m.name as "memberName"
+      `select c.id, c.name, c.emoji, m.id as "memberId", m.name as "memberName"
        from members m join circles c on c.id = m.circle_id
        where m.account_id = $1 order by m.joined_at`,
       [accountId],
@@ -160,6 +187,8 @@ export function circles(db: Db) {
     ).map((p) => ({ ...p, phase: planPhase(p, now) }));
     return c.json({
       email,
+      displayName,
+      color,
       circles: circles.map((circle) => ({
         ...circle,
         next: nextPlan(plans.filter((p) => p.circleId === circle.id)),
@@ -167,11 +196,45 @@ export function circles(db: Db) {
     } satisfies Me);
   });
 
+  // Every circle follows the account, so a rename can't leave one behind.
+  app.put("/me/name", async (c) => {
+    const { displayName } = await body(c, UpdateName);
+    const accountId = account(c);
+    await db.transaction(async (tx) => {
+      await tx.query("update accounts set display_name = $2 where id = $1", [
+        accountId,
+        displayName,
+      ]);
+      await tx.query("update members set name = $2 where account_id = $1", [
+        accountId,
+        displayName,
+      ]);
+    });
+    return c.json({ displayName } satisfies UpdateName);
+  });
+
+  app.get("/me/defaults", async (c) => {
+    const [{ defaults }] = await db.query<{ defaults: Defaults | null }>(
+      "select defaults from accounts where id = $1",
+      [account(c)],
+    );
+    return c.json((defaults ?? NO_DEFAULTS) satisfies Defaults);
+  });
+
+  app.put("/me/defaults", async (c) => {
+    const defaults = await body(c, Defaults);
+    await db.query("update accounts set defaults = $2::jsonb where id = $1", [
+      account(c),
+      JSON.stringify(defaults),
+    ]);
+    return c.json(defaults satisfies Defaults);
+  });
+
   app.get("/circles/:circleId", async (c) => {
     const circleId = c.req.param("circleId");
     const me = await memberOf(c, db, circleId);
     const [circle] = await db.query<CircleSummary>(
-      'select id, name, join_code as "joinCode" from circles where id = $1',
+      `select ${circleColumns} from circles where id = $1`,
       [circleId],
     );
     const members = await db.query<{

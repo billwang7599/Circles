@@ -5,6 +5,7 @@ import {
   Part,
   windowFor,
   type AreaId,
+  type CircleEmoji,
   type MembershipResponse,
   type PlanView,
   type PreferenceId,
@@ -25,6 +26,7 @@ type Member = {
 
 type Circle = {
   name: string;
+  emoji: CircleEmoji;
   code: string;
   plan: { title: string; areaId: AreaId };
   members: Member[];
@@ -33,6 +35,7 @@ type Circle = {
 const circles: Circle[] = [
   {
     name: "Roommates",
+    emoji: "🏠",
     code: "FSQWWV",
     plan: { title: "Dinner Friday", areaId: "uptown" },
     members: [
@@ -53,6 +56,7 @@ const circles: Circle[] = [
   },
   {
     name: "SE Friends",
+    emoji: "🎓",
     code: "YQLJVS",
     plan: { title: "Coffee before lecture", areaId: "uw" },
     members: [
@@ -132,11 +136,15 @@ const tokenOf = (name: string) => `dev:${emailOf(name)}`;
 
 for (const circle of seeded.length > 0 ? [] : circles) {
   const [owner, ...others] = circle.members;
+  for (const member of circle.members)
+    await request("PUT", "/api/me/name", tokenOf(member.name), {
+      displayName: member.name,
+    });
   const created = await request<MembershipResponse>(
     "POST",
     "/api/circles",
     tokenOf(owner.name),
-    { name: circle.name, memberName: owner.name },
+    { name: circle.name, emoji: circle.emoji },
   );
   await db.query("update circles set join_code = $1 where id = $2", [
     circle.code,
@@ -145,7 +153,6 @@ for (const circle of seeded.length > 0 ? [] : circles) {
   for (const member of others) {
     await request("POST", "/api/circles/join", tokenOf(member.name), {
       code: circle.code,
-      name: member.name,
     });
   }
 
@@ -184,6 +191,9 @@ for (const circle of seeded.length > 0 ? [] : circles) {
 }
 
 if (yourEmail) {
+  await request("PUT", "/api/me/name", `dev:${yourEmail}`, {
+    displayName: yourEmail.split("@")[0],
+  });
   for (const circle of circles) {
     const res = await app.request("/api/circles/join", {
       method: "POST",
@@ -191,10 +201,7 @@ if (yourEmail) {
         "content-type": "application/json",
         authorization: `Bearer dev:${yourEmail}`,
       },
-      body: JSON.stringify({
-        code: circle.code,
-        name: yourEmail.split("@")[0],
-      }),
+      body: JSON.stringify({ code: circle.code }),
     });
     if (!res.ok && res.status !== 409)
       throw new Error(`join ${circle.code}: ${res.status}`);

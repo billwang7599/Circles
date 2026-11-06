@@ -1,7 +1,9 @@
 import {
   areaById,
+  budgetRung,
   CreatePlan,
   datesIn,
+  type Defaults,
   EditPlan,
   RegistrationInput,
   localDate,
@@ -97,15 +99,18 @@ export async function planView(
     db.query<{
       defaultBudgetCents: number | null;
       defaultPreferences: PreferenceId[];
+      accountDefaults: Defaults | null;
       attending: boolean | null;
       budgetCents: number | null;
       busy: BusyPart[] | null;
       preferences: PreferenceId[] | null;
     }>(
       `select m.default_budget_cents as "defaultBudgetCents",
-         m.preferences as "defaultPreferences", r.attending,
+         m.preferences as "defaultPreferences",
+         a.defaults as "accountDefaults", r.attending,
          r.budget_cents as "budgetCents", r.busy, r.preferences
        from members m
+       join accounts a on a.id = m.account_id
        left join registrations r on r.plan_id = $1 and r.member_id = m.id
        where m.id = $2`,
       [plan.id, me.id],
@@ -149,8 +154,13 @@ export async function planView(
               preferences: mine.preferences ?? [],
             },
       defaults: {
-        budgetCents: mine.defaultBudgetCents ?? undefined,
+        // What the member set on purpose beats what a circle remembers.
+        budgetCents:
+          (mine.accountDefaults?.budget
+            ? budgetRung(mine.accountDefaults.budget).cents
+            : mine.defaultBudgetCents) ?? undefined,
         preferences: mine.defaultPreferences,
+        availability: mine.accountDefaults?.availability ?? [],
       },
     },
     options,

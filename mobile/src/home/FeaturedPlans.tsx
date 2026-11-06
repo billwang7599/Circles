@@ -1,43 +1,49 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { formatDay } from "../dates";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import { formatDay, todayKey } from "../dates";
 import { Text } from "../ui/Text";
-import { radius, space, typeScale, useTheme } from "../ui/theme";
+import { font, radius, size, space, useTheme } from "../ui/theme";
 import type { AgendaItem } from "./agenda";
 
 // The next few locked-in plans, one per page, swiped through.
 export function FeaturedPlans({ items }: { items: AgendaItem[] }) {
   const { colors } = useTheme();
-  const [width, setWidth] = useState(0);
+  const screen = useWindowDimensions();
+  // The column's width, known before layout so a page never starts at zero.
+  const width = Math.min(screen.width, size.maxWidth);
   const [page, setPage] = useState(0);
 
   if (items.length === 0)
     return (
       <View style={styles.page}>
-        <Text color="textMuted">Nothing coming up</Text>
+        <Text>{formatDay(todayKey())}</Text>
         <Text
+          variant="planTitle"
           numberOfLines={2}
           adjustsFontSizeToFit
           minimumFontScale={0.7}
-          style={[typeScale.display, styles.empty]}
+          accessibilityRole="header"
+          style={styles.empty}
         >
-          Start a plan in a circle
+          Nothing planned yet
         </Text>
       </View>
     );
 
   return (
-    <View
-      style={styles.hero}
-      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
-    >
+    <View style={styles.hero}>
       <ScrollView
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={(event) =>
-          width &&
           setPage(Math.round(event.nativeEvent.contentOffset.x / width))
         }
         scrollEventThrottle={16}
@@ -56,28 +62,26 @@ export function FeaturedPlans({ items }: { items: AgendaItem[] }) {
               { width, opacity: pressed ? 0.7 : 1 },
             ]}
           >
-            <Text variant="headline" style={styles.date}>
-              {formatDay(item.day)}
-            </Text>
+            <Text>{formatDay(item.day)}</Text>
             <View style={styles.row}>
               <Text
+                variant="planTitle"
                 numberOfLines={3}
                 adjustsFontSizeToFit
                 minimumFontScale={0.6}
                 accessibilityRole="header"
-                style={[typeScale.display, styles.title]}
+                style={styles.title}
               >
                 {item.plan.title}
               </Text>
               <View
-                style={[styles.rule, { backgroundColor: colors.foreground }]}
-              />
-              <View style={styles.side}>
+                style={[styles.side, { borderLeftColor: colors.foreground }]}
+              >
                 <Text numberOfLines={2} style={styles.circle}>
                   {item.circle.circle.name}
                 </Text>
-                <Text variant="body" numberOfLines={2}>
-                  {item.when}
+                <Text numberOfLines={2} style={styles.when}>
+                  {item.when} · Locked in
                 </Text>
               </View>
             </View>
@@ -106,26 +110,34 @@ export function FeaturedPlans({ items }: { items: AgendaItem[] }) {
 }
 
 const styles = StyleSheet.create({
-  hero: { gap: space.lg },
-  // The display line height sits under its font size, which clips the glyphs
-  // once this wraps; give it room.
-  empty: { lineHeight: 58, paddingTop: space.xs },
-  page: { gap: space.xs, paddingHorizontal: space.gutter },
-  date: { fontFamily: "Inter_500Medium" },
-  row: { flexDirection: "row", alignItems: "stretch", gap: space.lg },
-  title: { flex: 1.35 },
-  rule: { width: 1.5, marginVertical: space.sm },
-  side: { flex: 1, justifyContent: "flex-end", gap: space.xs },
+  hero: { gap: space.inline },
+  empty: { maxWidth: 320 },
+  page: { gap: space.inline, paddingHorizontal: space.gutter },
+  row: { flexDirection: "row", alignItems: "center", gap: 14 },
+  title: { flex: 1.5 },
+  side: {
+    flex: 1,
+    borderLeftWidth: 1.25,
+    paddingLeft: 14,
+    paddingVertical: 10,
+    gap: space.xs,
+  },
   circle: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 26,
-    lineHeight: 27,
-    letterSpacing: -1.3,
+    fontFamily: font.semibold,
+    fontSize: 19,
+    lineHeight: 21,
+    letterSpacing: -0.76,
+  },
+  when: {
+    fontFamily: font.medium,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: -0.12,
   },
   dots: {
     flexDirection: "row",
-    justifyContent: "center",
-    gap: space.xs,
+    gap: 4,
+    paddingHorizontal: space.gutter,
   },
-  dot: { width: 9, height: 9, borderRadius: radius.full },
+  dot: { width: 6, height: 6, borderRadius: radius.full },
 });

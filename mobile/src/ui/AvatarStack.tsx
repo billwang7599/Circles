@@ -60,10 +60,10 @@ export function AvatarStack({
             allowFontScaling={false}
             style={[
               styles.moreText,
-              { color: moreTextColor, fontSize: Math.round(size * 0.5) },
+              { color: moreTextColor, fontSize: Math.round(size * 0.4) },
             ]}
           >
-            {more}
+            +{more}
           </RNText>
         </View>
       ) : null}

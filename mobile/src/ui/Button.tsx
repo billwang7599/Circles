@@ -12,7 +12,7 @@ import { radius, size, space, useTheme } from "./theme";
 type Props = {
   title: string;
   onPress: () => void;
-  variant?: "primary" | "secondary" | "destructive";
+  variant?: "primary" | "secondary" | "destructive" | "ghost";
   size?: "default" | "small";
   icon?: IconName;
   loading?: boolean;
@@ -31,11 +31,17 @@ export function Button({
   style,
 }: Props) {
   const { colors } = useTheme();
-  const background = variant === "primary" ? colors.primary : "transparent";
+  const background = {
+    primary: colors.primary,
+    secondary: "transparent",
+    destructive: colors.danger,
+    ghost: "transparent",
+  }[variant];
   const foreground = {
     primary: colors.primaryForeground,
     secondary: colors.foreground,
-    destructive: colors.danger,
+    destructive: colors.dangerForeground,
+    ghost: colors.foreground,
   }[variant];
   const small = buttonSize === "small";
   const inactive = disabled || loading;
@@ -51,11 +57,7 @@ export function Button({
         {
           backgroundColor: background,
           borderColor:
-            variant === "primary"
-              ? "transparent"
-              : variant === "destructive"
-                ? colors.danger
-                : colors.input,
+            variant === "secondary" ? colors.foreground : "transparent",
           opacity: inactive ? 0.5 : pressed ? 0.7 : 1,
         },
         style,
@@ -66,10 +68,7 @@ export function Button({
       ) : icon ? (
         <Icon name={icon} size={16} color={foreground} />
       ) : null}
-      <Text
-        variant={small ? "label" : "button"}
-        style={[styles.title, { color: foreground }]}
-      >
+      <Text variant="label" style={[styles.title, { color: foreground }]}>
         {title}
       </Text>
     </Pressable>
@@ -82,11 +81,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: space.sm,
-    borderWidth: 1.2,
+    borderWidth: 1.25,
     borderRadius: radius.full,
-    paddingHorizontal: space.xl,
+    paddingHorizontal: space.lg,
   },
-  default: { minHeight: 52 },
+  default: { minHeight: size.control },
   small: { minHeight: size.small, minWidth: 72, paddingHorizontal: space.lg },
   // Long labels wrap at large text sizes instead of losing their end.
   title: { flexShrink: 1, textAlign: "center" },

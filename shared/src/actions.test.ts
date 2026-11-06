@@ -73,7 +73,7 @@ const view = (
       busy: [],
       preferences: [],
     },
-    defaults: { preferences: [] },
+    defaults: { preferences: [], availability: [] },
     ...patch.me,
   },
   options: patch.options ?? [{ id: "o" } as OptionView],

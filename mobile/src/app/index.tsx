@@ -1,4 +1,4 @@
-import { JoinCircle, type CircleView } from "@circles/shared";
+import { DisplayName } from "@circles/shared";
 import { router, Stack } from "expo-router";
 import { useState } from "react";
 import {
@@ -10,52 +10,44 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { isRefusal, useCircles, useMe } from "../api";
-import { agenda, isOver, needsMe } from "../home/agenda";
+import { isRefusal, useCircles, useMe, useSaveName } from "../api";
+import { agenda } from "../home/agenda";
 import { Calendar } from "../home/Calendar";
 import { CircleTile } from "../home/CircleTile";
 import { FeaturedPlans } from "../home/FeaturedPlans";
-import { Stat } from "../home/Hero";
 import { Logo } from "../home/Logo";
+import { Profile } from "../home/Profile";
 import { Tabs } from "../home/Tabs";
-import { setProfileName, useProfileName } from "../profile";
 import { Avatar } from "../ui/Avatar";
 import { Button } from "../ui/Button";
-import { Empty } from "../ui/Empty";
+import { Card } from "../ui/Card";
 import { ErrorState } from "../ui/ErrorState";
 import { Field } from "../ui/Field";
-import { RoundButton } from "../ui/RoundButton";
+import { Icon } from "../ui/Icon";
 import { Screen } from "../ui/Screen";
 import { Text } from "../ui/Text";
-import { radius, size, space, useTheme } from "../ui/theme";
+import { font, radius, size, space, useTheme } from "../ui/theme";
 
 const TABS = [
   { id: "home", label: "Home" },
   { id: "calendar", label: "Calendar" },
 ] as const;
-type Tab = (typeof TABS)[number]["id"];
+// Profile hangs off the avatar, so neither pill is lit while it shows.
+type Tab = (typeof TABS)[number]["id"] | "profile";
 
 export default function Home() {
   const me = useMe();
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
   const insets = useSafeAreaInsets();
-  const profileName = useProfileName();
   const [tab, setTab] = useState<Tab>("home");
   const [refreshing, setRefreshing] = useState(false);
   const circles = me.data?.circles ?? [];
   const details = useCircles(circles.map((circle) => circle.id));
   const views = details.flatMap((query) => (query.data ? [query.data] : []));
   const viewOf = (id: string) => views.find((view) => view.circle.id === id);
-  const items = agenda(views);
+  const items = agenda(views, scheme);
 
-  if (!profileName) return <Welcome />;
-
-  // My avatar, in the colour the first loaded circle gave me.
-  const myColor =
-    views
-      .flatMap((view: CircleView) => view.members)
-      .find((member) => circles.some((c) => c.memberId === member.id))?.color ??
-    "violet";
+  if (me.data && !me.data.displayName) return <Welcome />;
 
   async function refresh() {
     setRefreshing(true);
@@ -67,21 +59,16 @@ export default function Home() {
   }
 
   const loading = !me.data || isRefusal(me.error);
-  const stats = [
-    {
-      value: items.filter((item) => !isOver(item.plan)).length,
-      label: "upcoming",
-    },
-    {
-      value: circles.filter((circle) => needsMe(circle.next)).length,
-      label: "need you",
-    },
-    { value: circles.length, label: "circles" },
-  ];
+  const openNewCircle = () => router.push("/circles/new");
+  const openJoin = () => router.push("/join");
+  const bottom = { paddingBottom: insets.bottom + space.xl };
 
   return (
     <ScrollView
-      style={{ backgroundColor: colors.background }}
+      style={{
+        backgroundColor:
+          tab === "home" ? colors.homeBackground : colors.background,
+      }}
       contentContainerStyle={[styles.scroll, { paddingTop: insets.top }]}
       refreshControl={
         <RefreshControl
@@ -95,16 +82,28 @@ export default function Home() {
       <View style={styles.column}>
         <View style={styles.header}>
           <Logo />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Settings"
-            onPress={() => router.push("/settings")}
-            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-          >
-            <Avatar name={profileName} color={myColor} size={42} />
-          </Pressable>
+          {me.data?.displayName ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Profile"
+              aria-selected={tab === "profile"}
+              hitSlop={space.sm}
+              onPress={() => setTab("profile")}
+              style={({ pressed }) => [
+                styles.avatar,
+                tab === "profile" && { borderColor: colors.foreground },
+                { opacity: pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Avatar
+                name={me.data.displayName}
+                color={me.data.color}
+                size={28}
+              />
+            </Pressable>
+          ) : null}
         </View>
-        <View style={styles.tabs}>
+        <View style={styles.nav}>
           <Tabs tabs={TABS} value={tab} onChange={setTab} />
         </View>
       </View>
@@ -120,24 +119,17 @@ export default function Home() {
             <ActivityIndicator />
           )}
         </View>
+      ) : tab === "profile" ? (
+        <View style={[styles.column, styles.page, bottom]}>
+          <Profile me={me.data} />
+        </View>
       ) : tab === "calendar" ? (
-        <View
-          style={[
-            styles.column,
-            styles.calendar,
-            { paddingBottom: insets.bottom + space.xxl },
-          ]}
-        >
+        <View style={[styles.column, styles.page, bottom]}>
           <Calendar items={items} />
         </View>
       ) : (
         <>
           <View style={[styles.column, styles.body]}>
-            <View style={styles.stats}>
-              {stats.map((stat) => (
-                <Stat key={stat.label} {...stat} />
-              ))}
-            </View>
             <FeaturedPlans
               items={items
                 .filter((item) => item.plan.phase.kind === "locked")
@@ -156,28 +148,71 @@ export default function Home() {
             <View style={[styles.column, styles.sheetInner]}>
               <View style={styles.sheetTitle}>
                 <Text
-                  variant="section"
+                  variant="strong"
                   accessibilityRole="header"
                   style={styles.grow}
                 >
                   My Circles
                 </Text>
-                <RoundButton
-                  icon="hash"
-                  label="Join with code"
-                  onPress={() => router.push("/join")}
-                />
-                <RoundButton
-                  icon="plus"
-                  label="New circle"
-                  onPress={() => router.push("/circles/new")}
-                />
+                {/* With no circles, the empty card below offers these. */}
+                {circles.length > 0 ? (
+                  <>
+                    <Pressable
+                      accessibilityRole="button"
+                      hitSlop={space.xs}
+                      onPress={openJoin}
+                      style={({ pressed }) => [
+                        styles.joinPill,
+                        {
+                          borderColor: colors.foreground,
+                          opacity: pressed ? 0.7 : 1,
+                        },
+                      ]}
+                    >
+                      <Text style={styles.joinText}>Join with code</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="New circle"
+                      hitSlop={space.xs}
+                      onPress={openNewCircle}
+                      style={({ pressed }) => [
+                        styles.newCircle,
+                        {
+                          backgroundColor: colors.muted,
+                          opacity: pressed ? 0.7 : 1,
+                        },
+                      ]}
+                    >
+                      <Icon name="plus" size={16} color={colors.foreground} />
+                    </Pressable>
+                  </>
+                ) : null}
               </View>
               {circles.length === 0 ? (
-                <Empty
-                  icon="users"
-                  text="Start a circle or join one with a code"
-                />
+                <Card style={styles.noCircles}>
+                  <View
+                    style={[
+                      styles.noCirclesIcon,
+                      { backgroundColor: colors.muted },
+                    ]}
+                  >
+                    <Icon name="users" size={24} color={colors.foreground} />
+                  </View>
+                  <Text variant="strong">No circles yet</Text>
+                  <View style={styles.noCirclesActions}>
+                    <Button
+                      title="Create a circle"
+                      icon="plus"
+                      onPress={openNewCircle}
+                    />
+                    <Button
+                      title="Someone gave me a code"
+                      variant="ghost"
+                      onPress={openJoin}
+                    />
+                  </View>
+                </Card>
               ) : (
                 <View style={styles.cards}>
                   {circles.map((circle) => (
@@ -198,19 +233,18 @@ export default function Home() {
   );
 }
 
-// First run: the name this device will introduce itself with.
+// First run: the name this account goes by in every circle.
 function Welcome() {
   const insets = useSafeAreaInsets();
   const [name, setName] = useState("");
   const [error, setError] = useState<string>();
+  const save = useSaveName();
 
   function submit() {
-    const parsed = JoinCircle.shape.name.safeParse(name);
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message);
-      return;
-    }
-    setProfileName(parsed.data);
+    if (save.isPending) return;
+    const parsed = DisplayName.safeParse(name);
+    setError(parsed.success ? undefined : parsed.error.issues[0]?.message);
+    if (parsed.success) save.mutate({ displayName: parsed.data });
   }
 
   return (
@@ -225,12 +259,12 @@ function Welcome() {
           label="Your name"
           value={name}
           onChangeText={setName}
-          error={error}
+          error={error ?? save.error?.message}
           autoFocus
           returnKeyType="go"
           onSubmitEditing={submit}
         />
-        <Button title="Continue" onPress={submit} />
+        <Button title="Continue" onPress={submit} loading={save.isPending} />
       </View>
     </Screen>
   );
@@ -250,41 +284,65 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: space.md,
     paddingHorizontal: space.gutter,
-    paddingTop: space.md,
+    paddingTop: space.inline,
+    paddingBottom: 18,
   },
-  tabs: { paddingHorizontal: space.gutter, paddingTop: space.lg },
+  // The ring is always there, unseen until Profile shows, so nothing shifts.
+  avatar: {
+    padding: 2,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+    borderRadius: radius.full,
+  },
+  nav: { paddingHorizontal: space.gutter, paddingBottom: space.md },
+  page: { paddingTop: space.md },
   // The featured plans pad their own pages, so the body adds no sides.
-  body: { paddingTop: space.xl, paddingBottom: space.xxl, gap: space.xl },
-  calendar: { paddingTop: space.xxl },
-  section: { gap: space.md },
-  sectionTitle: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.sm,
-    paddingLeft: space.xs,
-  },
+  body: { paddingTop: 18, paddingBottom: space.gutter },
   grow: { flex: 1 },
-  stats: {
-    flexDirection: "row",
-    gap: space.xxl,
-    paddingHorizontal: space.gutter,
-  },
   sheet: {
     flexGrow: 1,
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
-    paddingTop: space.xl,
+    paddingTop: 22,
   },
-  sheetInner: { gap: space.md, paddingHorizontal: space.md },
+  sheetInner: { gap: 10, paddingHorizontal: space.lg },
+  // Tall enough for its buttons, so the row holds its height without them.
   sheetTitle: {
+    minHeight: 32,
     flexDirection: "row",
     alignItems: "center",
     gap: space.sm,
-    paddingLeft: space.sm,
-    paddingRight: space.xs,
-    paddingBottom: space.xs,
+    paddingLeft: space.inline,
   },
-  cards: { gap: space.sm },
+  joinPill: {
+    borderWidth: 1.25,
+    borderRadius: radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: space.inline,
+  },
+  joinText: {
+    fontFamily: font.medium,
+    fontSize: 14,
+    lineHeight: 18,
+    letterSpacing: -0.21,
+  },
+  newCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.full,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cards: { gap: 10 },
+  noCircles: { alignItems: "center", padding: space.xl },
+  noCirclesIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.full,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  noCirclesActions: { alignSelf: "stretch", gap: space.sm },
   welcome: { gap: space.xl },
   form: { gap: space.lg },
 });

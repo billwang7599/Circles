@@ -1,12 +1,13 @@
 import {
   areaById,
   localDate,
+  nextMove,
   type CircleView,
   type NextPlan,
   type PlanSummary,
 } from "@circles/shared";
-import { formatTime, formatWindow } from "../dates";
-import { circleTone, type CircleTone } from "../ui/theme";
+import { formatDay, formatRange, formatTime, formatWindow } from "../dates";
+import { circleTone, type CircleTone, type Scheme } from "../ui/theme";
 
 export type AgendaItem = {
   plan: PlanSummary;
@@ -23,13 +24,17 @@ export type AgendaItem = {
 export const isOver = (plan: PlanSummary) =>
   plan.phase.kind === "ended" || plan.phase.kind === "past";
 
-export function agendaItem(plan: PlanSummary, circle: CircleView): AgendaItem {
+export function agendaItem(
+  plan: PlanSummary,
+  circle: CircleView,
+  scheme: Scheme,
+): AgendaItem {
   const timezone = areaById(plan.areaId).timezone;
   const locked = plan.lockedStart;
   return {
     plan,
     circle,
-    tone: circleTone(circle.circle.id),
+    tone: circleTone(circle.circle.id, scheme),
     day: locked ? localDate(new Date(locked), timezone) : plan.windowStart,
     when: locked
       ? formatTime(locked, timezone)
@@ -39,11 +44,27 @@ export function agendaItem(plan: PlanSummary, circle: CircleView): AgendaItem {
 }
 
 // Every plan of every circle, soonest first.
-export function agenda(circles: CircleView[]): AgendaItem[] {
+export function agenda(circles: CircleView[], scheme: Scheme): AgendaItem[] {
   return circles
-    .flatMap((circle) => circle.plans.map((plan) => agendaItem(plan, circle)))
+    .flatMap((circle) =>
+      circle.plans.map((plan) => agendaItem(plan, circle, scheme)),
+    )
     .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 }
+
+// When an event happens, for a row of events.
+export function eventLine({ plan, day, when }: AgendaItem) {
+  return plan.lockedStart
+    ? `${formatDay(day)} · ${when}`
+    : formatRange(plan.windowStart, plan.windowEnd);
+}
+
+// The Events tab's two lists: what is waiting on me, and the rest still ahead.
+export const needsYou = (items: AgendaItem[]) =>
+  items.filter((item) => nextMove(item.plan) !== null);
+
+export const comingUp = (items: AgendaItem[]) =>
+  items.filter((item) => !isOver(item.plan) && nextMove(item.plan) === null);
 
 export function nextLine(next: NextPlan | null) {
   if (!next) return "No plans yet";

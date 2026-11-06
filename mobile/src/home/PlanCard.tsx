@@ -3,8 +3,10 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { AvatarStack } from "../ui/AvatarStack";
 import { Text } from "../ui/Text";
 import { font, radius, space } from "../ui/theme";
-import { STACK_OVERLAP } from "./CircleCard";
 import { circleInitials, type AgendaItem } from "./agenda";
+
+// How far a stacked card tucks under the one before.
+export const STACK_OVERLAP = 28;
 
 export function PlanCard({
   item,
@@ -43,15 +45,15 @@ export function PlanCard({
           <AvatarStack
             members={circle.members}
             ringColor={tone.fill}
-            moreColor={tone.ink}
-            moreTextColor={tone.onInk}
+            moreColor={tone.chip}
+            moreTextColor={tone.onChip}
             size={24}
             max={6}
           />
         </View>
       </View>
-      <View style={[styles.badge, { backgroundColor: tone.ink }]}>
-        <Text style={[styles.badgeText, { color: tone.onInk }]}>
+      <View style={[styles.badge, { backgroundColor: tone.chip }]}>
+        <Text style={[styles.badgeText, { color: tone.onChip }]}>
           {circleInitials(circle.circle.name)}
         </Text>
       </View>

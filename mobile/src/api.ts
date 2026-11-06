@@ -2,6 +2,7 @@ import type {
   CircleView,
   CreateCircle,
   CreatePlan,
+  Defaults,
   EditPlan,
   JoinCircle,
   Lock,
@@ -9,6 +10,7 @@ import type {
   MembershipResponse,
   PlanView,
   RegistrationInput,
+  UpdateName,
   Vote,
 } from "@circles/shared";
 import {
@@ -79,6 +81,8 @@ async function request<T>(
 
 const keys = {
   me: ["me"] as const,
+  defaults: ["me", "defaults"] as const,
+  circles: ["circles"] as const,
   circle: (id: string) => ["circles", id] as const,
   plan: (circleId: string, planId: string) =>
     ["circles", circleId, "plans", planId] as const,
@@ -124,6 +128,43 @@ function useMembership<Body extends object>(path: string) {
     mutationFn: (body: Body) => request<MembershipResponse>(path, body),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: keys.me });
+    },
+  });
+}
+
+// A rename changes the member lists every circle and plan shows.
+export function useSaveName() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: UpdateName) =>
+      request<UpdateName>("/api/me/name", body, "PUT"),
+    onSuccess: ({ displayName }) => {
+      queryClient.setQueryData<Me>(
+        keys.me,
+        (me) => me && { ...me, displayName },
+      );
+      void queryClient.invalidateQueries({ queryKey: keys.me });
+      void queryClient.invalidateQueries({ queryKey: keys.circles });
+    },
+  });
+}
+
+export function useDefaults() {
+  return useQuery({
+    queryKey: keys.defaults,
+    queryFn: () => request<Defaults>("/api/me/defaults"),
+  });
+}
+
+// Plans prefill from these, so what they offer changes too.
+export function useSaveDefaults() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Defaults) =>
+      request<Defaults>("/api/me/defaults", body, "PUT"),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(keys.defaults, saved);
+      void queryClient.invalidateQueries({ queryKey: keys.circles });
     },
   });
 }

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { PlanSummary } from "./plan.ts";
 
-const Name = z
+export const DisplayName = z
   .string()
   .trim()
   .min(1, "Enter a name")
@@ -24,13 +24,41 @@ export const AVATAR_COLORS = [
 ] as const;
 export type AvatarColor = (typeof AVATAR_COLORS)[number];
 
-export const CreateCircle = z.object({ name: Name, memberName: Name });
+export const CIRCLE_EMOJI = [
+  "🎉",
+  "🍜",
+  "🏠",
+  "🎓",
+  "⚽",
+  "🎮",
+  "🎵",
+  "🎨",
+  "☕",
+  "🏕️",
+  "✈️",
+  "📚",
+] as const;
+export const CircleEmoji = z.enum(CIRCLE_EMOJI);
+export type CircleEmoji = z.infer<typeof CircleEmoji>;
+
+export const CreateCircle = z.object({
+  name: DisplayName,
+  emoji: CircleEmoji.optional(),
+});
 export type CreateCircle = z.infer<typeof CreateCircle>;
 
-export const JoinCircle = z.object({ code: JoinCode, name: Name });
+export const JoinCircle = z.object({ code: JoinCode });
 export type JoinCircle = z.infer<typeof JoinCircle>;
 
-export type CircleSummary = { id: string; name: string; joinCode: string };
+export const UpdateName = z.object({ displayName: DisplayName });
+export type UpdateName = z.infer<typeof UpdateName>;
+
+export type CircleSummary = {
+  id: string;
+  name: string;
+  joinCode: string;
+  emoji: CircleEmoji | null;
+};
 export type MemberSummary = { id: string; name: string };
 
 export type MembershipResponse = {
@@ -46,9 +74,13 @@ export type NextPlan = {
 
 export type Me = {
   email: string;
+  // Null until the account has chosen one.
+  displayName: string | null;
+  color: AvatarColor;
   circles: {
     id: string;
     name: string;
+    emoji: CircleEmoji | null;
     memberId: string;
     memberName: string;
     next: NextPlan | null;

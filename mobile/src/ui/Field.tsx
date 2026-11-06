@@ -17,7 +17,7 @@ export function Field({ label, icon, prefix, error, style, ...input }: Props) {
   return (
     <View style={styles.field}>
       <View style={styles.label}>
-        <Text variant="label">{label}</Text>
+        <Text variant="fieldLabel">{label}</Text>
         {icon ? <Icon name={icon} size={16} color={colors.textMuted} /> : null}
       </View>
       <View
@@ -25,7 +25,7 @@ export function Field({ label, icon, prefix, error, style, ...input }: Props) {
           styles.box,
           {
             backgroundColor: colors.control,
-            borderColor: error ? colors.danger : colors.border,
+            borderColor: error ? colors.danger : colors.input,
           },
         ]}
       >
@@ -62,22 +62,22 @@ export function useIssues() {
 }
 
 const styles = StyleSheet.create({
-  field: { gap: space.sm },
+  field: { gap: space.inline },
   label: { flexDirection: "row", alignItems: "center", gap: space.inline },
   box: {
-    minHeight: 52,
+    minHeight: size.control,
     flexDirection: "row",
     alignItems: "center",
     gap: space.xs,
-    borderRadius: radius.card,
+    borderRadius: radius.full,
     borderWidth: 1,
-    paddingHorizontal: space.gutter,
+    paddingHorizontal: space.lg,
   },
-  prefix: { fontSize: 17 },
+  prefix: { fontSize: 16 },
   input: {
     flex: 1,
     minHeight: size.control,
     fontFamily: font.regular,
-    fontSize: 17,
+    fontSize: 16,
   },
 });
