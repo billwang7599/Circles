@@ -81,6 +81,13 @@ export function formatInterval({ start, end }: Interval, timeZone: string) {
   return `${formatStart(start, timeZone)} to ${timeFormat(timeZone).format(new Date(end))}`;
 }
 
+// Today as YYYY-MM-DD, on this device's calendar.
+export function todayKey() {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 // A YYYY-MM-DD day, written out: "Thursday, Oct 8".
 export function formatDay(date: string) {
   return new Intl.DateTimeFormat(undefined, {

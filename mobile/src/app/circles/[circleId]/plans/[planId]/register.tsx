@@ -1,5 +1,6 @@
 import {
   datesIn,
+  defaultBusy,
   PREFERENCES,
   RegistrationInput,
   sameRegistration,
@@ -76,7 +77,14 @@ function Form({
   const [budget, setBudget] = useState(
     initialCents === undefined ? "" : (initialCents / 100).toFixed(2),
   );
-  const [busy, setBusy] = useState<BusyPart[]>(registration?.busy ?? []);
+  const [busy, setBusy] = useState<BusyPart[]>(
+    registration?.busy ??
+      defaultBusy(
+        datesIn(view.plan.windowStart, view.plan.windowEnd),
+        view.plan.parts,
+        defaults.availability,
+      ),
+  );
   const [preferences, setPreferences] = useState<PreferenceId[]>(
     registration?.preferences ?? defaults.preferences,
   );

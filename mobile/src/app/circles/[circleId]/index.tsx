@@ -23,7 +23,7 @@ import { isRefusal, useCircle, useLeaveCircle } from "../../../api";
 import { confirmAction } from "../../../confirm";
 import { formatTime } from "../../../dates";
 import { isOver, plural } from "../../../home/agenda";
-import { STACK_OVERLAP } from "../../../home/CircleCard";
+import { STACK_OVERLAP } from "../../../home/PlanCard";
 import { Tabs } from "../../../home/Tabs";
 import { Avatar } from "../../../ui/Avatar";
 import { AvatarStack } from "../../../ui/AvatarStack";
@@ -228,7 +228,8 @@ export default function Circle() {
 }
 
 function Hero({ view }: { view: CircleView }) {
-  const tone = circleTone(view.circle.id);
+  const { scheme } = useTheme();
+  const tone = circleTone(view.circle.id, scheme);
   const since = view.members.map((member) => member.joinedAt).sort()[0];
   const upcoming = view.plans.filter((plan) => !isOver(plan)).length;
   return (
@@ -258,8 +259,8 @@ function Hero({ view }: { view: CircleView }) {
         <AvatarStack
           members={view.members}
           ringColor={tone.fill}
-          moreColor={tone.ink}
-          moreTextColor={tone.onInk}
+          moreColor={tone.chip}
+          moreTextColor={tone.onChip}
           size={30}
           max={4}
         />
@@ -333,12 +334,17 @@ function PlanCard({
   // Another card tucks under this one.
   covered: boolean;
 }) {
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
   const over = isOver(plan);
   // Each plan wears its own tone, so a list of them reads as a stack of colour.
   const tone: CircleTone = over
-    ? { fill: colors.surface, ink: colors.foreground, onInk: colors.surface }
-    : circleTone(plan.id);
+    ? {
+        fill: colors.surface,
+        ink: colors.foreground,
+        chip: colors.foreground,
+        onChip: colors.surface,
+      }
+    : circleTone(plan.id, scheme);
   const info = describe(plan);
   const open = () =>
     router.push(
@@ -393,7 +399,7 @@ function PlanCard({
           style={[
             styles.badge,
             info.urgent
-              ? { backgroundColor: tone.ink }
+              ? { backgroundColor: tone.chip }
               : { borderWidth: 1.2, borderColor: tone.ink },
           ]}
         >
@@ -401,7 +407,7 @@ function PlanCard({
             variant="caption"
             style={[
               styles.badgeText,
-              { color: info.urgent ? tone.onInk : tone.ink },
+              { color: info.urgent ? tone.onChip : tone.ink },
             ]}
           >
             {info.status}

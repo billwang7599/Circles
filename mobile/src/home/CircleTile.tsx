@@ -2,7 +2,7 @@ import type { CircleView, Me } from "@circles/shared";
 import { Pressable, StyleSheet, View } from "react-native";
 import { AvatarStack } from "../ui/AvatarStack";
 import { Text } from "../ui/Text";
-import { circleTone, font, radius, space } from "../ui/theme";
+import { circleTone, font, radius, space, useTheme } from "../ui/theme";
 import { isOver, needsMe, nextLine, plural } from "./agenda";
 
 type Props = {
@@ -14,9 +14,11 @@ type Props = {
 
 // A circle as a tall card in its own colour: name, faces, members, plans.
 export function CircleTile({ circle, view, onPress }: Props) {
-  const tone = circleTone(circle.id);
+  const { scheme } = useTheme();
+  const tone = circleTone(circle.id, scheme);
+  const urgent = needsMe(circle.next);
   const upcoming = view?.plans.filter((plan) => !isOver(plan)).length;
-  const status = needsMe(circle.next)
+  const status = urgent
     ? nextLine(circle.next)
     : upcoming !== undefined
       ? plural(upcoming, "upcoming plan")
@@ -33,37 +35,39 @@ export function CircleTile({ circle, view, onPress }: Props) {
     >
       <View style={styles.top}>
         <Text
+          variant="tileName"
           numberOfLines={2}
           style={[styles.name, { color: tone.ink }]}
           accessibilityElementsHidden
         >
-          {circle.name}
+          {circle.emoji ? `${circle.emoji} ${circle.name}` : circle.name}
         </Text>
         {view ? (
           <AvatarStack
             members={view.members}
             ringColor={tone.fill}
-            moreColor={tone.ink}
-            moreTextColor={tone.onInk}
+            moreColor={tone.chip}
+            moreTextColor={tone.onChip}
+            size={28}
           />
         ) : null}
       </View>
       <View style={styles.bottom}>
         {view ? (
-          <View style={[styles.pill, { backgroundColor: tone.ink }]}>
-            <Text variant="button" style={{ color: tone.onInk }}>
+          <View style={[styles.pill, { backgroundColor: tone.chip }]}>
+            <Text style={[styles.pillText, { color: tone.onChip }]}>
               {plural(view.members.length, "member")}
             </Text>
           </View>
         ) : null}
         <Text
-          variant="button"
           numberOfLines={1}
           style={[
             styles.status,
             {
               color: tone.ink,
-              fontFamily: needsMe(circle.next) ? font.medium : font.regular,
+              fontFamily: urgent ? font.semibold : font.regular,
+              opacity: urgent ? 1 : 0.85,
             },
           ]}
         >
@@ -74,27 +78,23 @@ export function CircleTile({ circle, view, onPress }: Props) {
   );
 }
 
+const metaText = { fontSize: 14, lineHeight: 18, letterSpacing: -0.21 };
+
 const styles = StyleSheet.create({
   card: {
-    borderRadius: radius.card + 4,
-    paddingHorizontal: space.xl,
-    paddingTop: space.xl,
-    paddingBottom: space.gutter,
-    gap: space.lg,
+    borderRadius: radius.card,
+    paddingHorizontal: 22,
+    paddingVertical: 18,
+    gap: 14,
   },
   top: { flexDirection: "row", alignItems: "flex-start", gap: space.md },
-  name: {
-    flex: 1,
-    fontFamily: font.medium,
-    fontSize: 44,
-    lineHeight: 46,
-    letterSpacing: -2.6,
-  },
+  name: { flex: 1 },
   bottom: { flexDirection: "row", alignItems: "center", gap: space.md },
   pill: {
     borderRadius: radius.full,
     paddingHorizontal: space.md,
-    paddingVertical: space.inline,
+    paddingVertical: 5,
   },
-  status: { flexShrink: 1 },
+  pillText: { ...metaText, fontFamily: font.medium },
+  status: { ...metaText, flexShrink: 1 },
 });

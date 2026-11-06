@@ -70,5 +70,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  initials: { fontFamily: font.medium },
+  initials: { fontFamily: font.semibold },
 });

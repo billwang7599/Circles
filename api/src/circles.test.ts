@@ -1,4 +1,11 @@
-import type { CircleView, Lock, Me, NextPlan, PlanView } from "@circles/shared";
+import type {
+  CircleView,
+  Defaults,
+  Lock,
+  Me,
+  NextPlan,
+  PlanView,
+} from "@circles/shared";
 import { beforeAll, expect, test, vi } from "vitest";
 import type { Db } from "./db.ts";
 import { newToken, testApp, type TestApp } from "./testApp.ts";
@@ -6,29 +13,185 @@ import { newToken, testApp, type TestApp } from "./testApp.ts";
 let call: TestApp["call"];
 let createCircle: TestApp["createCircle"];
 let circleWith: TestApp["circleWith"];
+let named: TestApp["named"];
+let register: TestApp["register"];
 let createPlan: TestApp["createPlan"];
 let planWithOptions: TestApp["planWithOptions"];
 let db: Db;
 
 beforeAll(async () => {
-  ({ call, createCircle, circleWith, createPlan, planWithOptions, db } =
-    await testApp());
+  ({
+    call,
+    createCircle,
+    circleWith,
+    createPlan,
+    named,
+    planWithOptions,
+    register,
+    db,
+  } = await testApp());
 });
 
 const get = (path: string, token?: string) => call("GET", path, token);
 const post = (path: string, data: unknown) =>
   call("POST", path, newToken(), data);
 
-test("joining with a name someone in the circle already uses is 409", async () => {
+const defaults: Defaults = {
+  budget: "under30",
+  availability: [{ day: "sat", part: "evening" }],
+  likes: ["food", "lateNight"],
+  dislikes: ["coffee"],
+};
+
+test("two members of a circle can share a name", async () => {
   const { circle } = await createCircle("Dinner club", "Nicky");
-  const res = await post("/api/circles/join", {
+  const token = await named("nicky");
+  const res = await call("POST", "/api/circles/join", token, {
     code: circle.joinCode,
-    name: "nicky",
   });
-  expect(res.status).toBe(409);
-  expect(await res.json()).toEqual({
-    error: "Someone in this circle already uses that name",
+  expect(res.status).toBe(201);
+});
+
+test("creating or joining a circle needs a name first", async () => {
+  const { circle } = await createCircle("Dinner club", "Nicky");
+  for (const [path, data] of [
+    ["/api/circles", { name: "Lunch club" }],
+    ["/api/circles/join", { code: circle.joinCode }],
+  ] as const) {
+    const res = await post(path, data);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "Add your name first" });
+  }
+});
+
+test("a new account has no name, and /me shows the one it picks", async () => {
+  const token = newToken();
+  expect(
+    ((await (await get("/api/me", token)).json()) as Me).displayName,
+  ).toBeNull();
+  await named("  Nicky  ", token);
+  const me = (await (await get("/api/me", token)).json()) as Me;
+  expect(me.displayName).toBe("Nicky");
+  expect(me.color).toEqual(expect.any(String));
+});
+
+test("a rename reaches every circle the account is in", async () => {
+  const first = await createCircle("Dinner club", "Nicky");
+  const second = await call("POST", "/api/circles", first.token, {
+    name: "Lunch club",
   });
+  expect(second.status).toBe(201);
+  const renamed = await call("PUT", "/api/me/name", first.token, {
+    displayName: "Nick",
+  });
+  expect(renamed.status).toBe(200);
+  const me = (await (await get("/api/me", first.token)).json()) as Me;
+  expect(me.circles.map((circle) => circle.memberName)).toEqual([
+    "Nick",
+    "Nick",
+  ]);
+  const view = (await (
+    await get(`/api/circles/${first.circle.id}`, first.token)
+  ).json()) as CircleView;
+  expect(view.members.map((member) => member.name)).toEqual(["Nick"]);
+});
+
+test.each(["", "   ", "x".repeat(41)])(
+  "a name of %j is refused",
+  async (name) => {
+    const res = await call("PUT", "/api/me/name", newToken(), {
+      displayName: name,
+    });
+    expect(res.status).toBe(400);
+  },
+);
+
+test("a circle keeps the emoji it was made with", async () => {
+  const token = await named("Nicky");
+  const res = await call("POST", "/api/circles", token, {
+    name: "Flat 3B",
+    emoji: "🏠",
+  });
+  expect(res.status).toBe(201);
+  const me = (await (await get("/api/me", token)).json()) as Me;
+  expect(me.circles).toMatchObject([{ name: "Flat 3B", emoji: "🏠" }]);
+});
+
+test("an emoji outside the set is refused", async () => {
+  const res = await call("POST", "/api/circles", await named("Nicky"), {
+    name: "Flat 3B",
+    emoji: "🦄",
+  });
+  expect(res.status).toBe(400);
+});
+
+test("defaults start empty and come back as saved", async () => {
+  const token = newToken();
+  expect(await (await get("/api/me/defaults", token)).json()).toEqual({
+    budget: null,
+    availability: [],
+    likes: [],
+    dislikes: [],
+  });
+  const saved = await call("PUT", "/api/me/defaults", token, defaults);
+  expect(saved.status).toBe(200);
+  expect(await (await get("/api/me/defaults", token)).json()).toEqual(defaults);
+});
+
+test.each([
+  ["a fourth like", { likes: ["food", "music", "games", "chill"] }],
+  ["a tag in both lists", { likes: ["coffee"] }],
+  ["an unknown rung", { budget: "under5" }],
+])("defaults with %s are refused", async (_, change) => {
+  const res = await call("PUT", "/api/me/defaults", newToken(), {
+    ...defaults,
+    ...change,
+  });
+  expect(res.status).toBe(400);
+});
+
+test("a plan offers the account's defaults over what the circle remembers", async () => {
+  const {
+    circleId,
+    tokens: [nicky],
+  } = await circleWith("Nicky", "Bill");
+  const plan = await createPlan(circleId, nicky);
+  const path = `/api/circles/${circleId}/plans/${plan.id}`;
+  await register(path, nicky, {
+    attending: true,
+    budgetCents: 5000,
+    busy: [],
+    preferences: ["ramen"],
+  });
+  const before = (await (await get(path, nicky)).json()) as PlanView;
+  expect(before.me.defaults).toEqual({
+    budgetCents: 5000,
+    preferences: ["ramen"],
+    availability: [],
+  });
+  await call("PUT", "/api/me/defaults", nicky, defaults);
+  const after = (await (await get(path, nicky)).json()) as PlanView;
+  expect(after.me.defaults).toEqual({
+    budgetCents: 3000,
+    preferences: ["ramen"],
+    availability: defaults.availability,
+  });
+});
+
+test("saving a registration leaves the account's defaults alone", async () => {
+  const {
+    circleId,
+    tokens: [nicky],
+  } = await circleWith("Nicky", "Bill");
+  await call("PUT", "/api/me/defaults", nicky, defaults);
+  const plan = await createPlan(circleId, nicky);
+  await register(`/api/circles/${circleId}/plans/${plan.id}`, nicky, {
+    attending: true,
+    budgetCents: 5000,
+    busy: [],
+    preferences: ["ramen"],
+  });
+  expect(await (await get("/api/me/defaults", nicky)).json()).toEqual(defaults);
 });
 
 test("a token from another circle is 403 on the circle view", async () => {
