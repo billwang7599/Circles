@@ -1,0 +1,17 @@
+name: Build and submit iOS
+on:
+  push:
+    branches: ['main']
+    paths: ['mobile/**']
+jobs:
+  build:
+    type: build
+    params:
+      platform: ios
+      profile: production
+  submit:
+    needs: [build]
+    type: submit
+    params:
+      build_id: ${{ needs.build.outputs.build_id }}
+      profile: production
