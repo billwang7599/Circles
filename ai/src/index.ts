@@ -10,3 +10,4 @@ export * from "./availability.ts";
 export * from "./chat.ts";
 export * from "./time.ts";
 export * from "./types.ts";
+export * from "./webSearch.ts";

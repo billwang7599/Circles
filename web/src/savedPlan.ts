@@ -1,4 +1,4 @@
-import type { PlanJob, PlanRequest, PlanResult } from "@circles/ai";
+import type { PlanJob, PlanRequest, PlanResult, WebMention } from "@circles/ai";
 import type { Interval } from "@circles/shared";
 
 export interface SavedOption {
@@ -14,6 +14,7 @@ export interface SavedOption {
   unmet?: string[];
   rating?: number;
   priceLevel?: number;
+  web?: WebMention;
 }
 
 export type SavedOutcome =
@@ -70,6 +71,7 @@ export function toOutcome(res: PlanResult): SavedOutcome {
         ...(place?.priceLevel !== undefined
           ? { priceLevel: place.priceLevel }
           : {}),
+        ...(place?.web ? { web: place.web } : {}),
       };
     }),
   };

@@ -85,6 +85,21 @@ with `npx prettier --write <files>`.
 :3002). Without `BEDROCK_MODEL_ID` or a Places key it runs on the fake model and fake restaurants; set them as for the
 API below.
 
+The bench also has the model search the web for places locals recommend (at most 5 searches and 5 page reads a plan),
+then looks each one up on Places. Without `AGENTCORE_GATEWAY_URL` it searches fake results. The search is Web Search
+on Amazon Bedrock AgentCore ($7 per 1,000 searches) behind an AgentCore Gateway, in `us-east-1` because Web Search isn't
+offered in `ca-central-1`. The gateway, its web search target and its role are in `infra/web-search.yml`:
+
+```
+aws cloudformation deploy --profile circles --region us-east-1 --stack-name circles-web-search \
+  --template-file infra/web-search.yml --capabilities CAPABILITY_IAM
+aws cloudformation describe-stacks --profile circles --region us-east-1 --stack-name circles-web-search \
+  --query 'Stacks[0].Outputs'
+```
+
+Put the `GatewayUrl` output in `web/.env` as `AGENTCORE_GATEWAY_URL`. Pages are read with a plain GET; Reddit, Google,
+TikTok, Instagram and Facebook pages are never fetched, only their search snippets used.
+
 **App State**
 Locally everything is on your own machine: app → your API → your Docker Postgres. To test real multi-phone flows, phones must share one API which is what AWS is for.
 

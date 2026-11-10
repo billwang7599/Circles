@@ -3,6 +3,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import type { Candidate, LatLng, OpeningPeriod } from "./types.ts";
 import type { RankCandidate } from "./llm.ts";
 import type { RestaurantClient, RestaurantQuery } from "./restaurants.ts";
+import type { WebClient, WebResult } from "./webSearch.ts";
 
 /** Open every day from openH to closeH local time. closeH above 24 wraps past midnight. */
 const daily = (openH: number, closeH: number): OpeningPeriod[] =>
@@ -116,6 +117,29 @@ export class FakeRestaurantClient implements RestaurantClient {
   }
 }
 
+const FAKE_WEB_RESULTS: WebResult[] = [
+  {
+    title: "Where do locals actually eat? (r/fakecity)",
+    url: "https://www.reddit.com/r/fakecity/comments/abc123/where_do_locals_eat/",
+    text: "Spice Route is the hidden gem nobody talks about. Noodle House for late-night ramen.",
+  },
+  {
+    title: "Trending this month: Green Bowl",
+    url: "https://fakefoodblog.example/green-bowl",
+    text: "Green Bowl has been all over TikTok for its build-your-own bowls.",
+  },
+];
+
+export class FakeWebClient implements WebClient {
+  async search(): Promise<WebResult[]> {
+    return FAKE_WEB_RESULTS;
+  }
+
+  async read(url: string): Promise<string> {
+    return FAKE_WEB_RESULTS.find((r) => r.url === url)?.text ?? "";
+  }
+}
+
 const KNOWN_CUISINES = [
   "ramen",
   "japanese",
@@ -133,6 +157,7 @@ export interface FakeLlmOverrides {
   rank?: (candidates: RankCandidate[], n: number) => unknown;
   /** Replace what the fake model answers for the interpret call. Receives the whole prompt. */
   interpret?: (prompt: string) => unknown;
+  research?: (results: WebResult[]) => unknown;
 }
 
 const DAY_WORDS: [RegExp, string][] = [
@@ -215,21 +240,70 @@ function fakeInterpret(prompt: string): {
   return { edits };
 }
 
+const USAGE = {
+  inputTokens: {
+    total: 1,
+    noCache: 1,
+    cacheRead: undefined,
+    cacheWrite: undefined,
+  },
+  outputTokens: { total: 1, text: 1, reasoning: undefined },
+};
+
 /** A model response carrying `answer` as JSON text. */
 const reply = (answer: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(answer) }],
   finishReason: { unified: "stop" as const, raw: undefined },
-  usage: {
-    inputTokens: {
-      total: 1,
-      noCache: 1,
-      cacheRead: undefined,
-      cacheWrite: undefined,
-    },
-    outputTokens: { total: 1, text: 1, reasoning: undefined },
-  },
+  usage: USAGE,
   warnings: [],
 });
+
+const toolCall = (toolName: string, input: unknown) => ({
+  content: [
+    {
+      type: "tool-call" as const,
+      toolCallId: "fake-call",
+      toolName,
+      input: JSON.stringify(input),
+    },
+  ],
+  finishReason: { unified: "tool-calls" as const, raw: undefined },
+  usage: USAGE,
+  warnings: [],
+});
+
+function searchResults(prompt: unknown): WebResult[] | undefined {
+  const parts = (prompt as { role: string; content: unknown }[])
+    .filter((m) => m.role === "tool")
+    .flatMap(
+      (m) =>
+        m.content as {
+          toolName: string;
+          output: { type: string; value: unknown };
+        }[],
+    )
+    .filter((p) => p.toolName === "webSearch" && p.output.type === "json");
+  return parts.length > 0
+    ? parts.flatMap((p) => p.output.value as WebResult[])
+    : undefined;
+}
+
+function fakeResearch(results: WebResult[]) {
+  return {
+    places: DEFAULT_PLACES.flatMap(({ name }) => {
+      const hits = results.filter((r) => r.text.includes(name));
+      return hits.length > 0
+        ? [
+            {
+              name,
+              note: `Mentioned in "${hits[0]!.title}".`,
+              sourceUrls: hits.map((r) => r.url),
+            },
+          ]
+        : [];
+    }),
+  };
+}
 
 /** Text of the last user message sent to the model. */
 function userText(prompt: unknown): string {
@@ -248,8 +322,20 @@ function userText(prompt: unknown): string {
  */
 export function createFakeLlmModel(overrides: FakeLlmOverrides = {}) {
   return new MockLanguageModelV4({
-    doGenerate: async ({ prompt }) => {
+    doGenerate: async ({ prompt, tools }) => {
       const text = userText(prompt);
+      if (tools?.some((t) => t.name === "webSearch")) {
+        const results = searchResults(prompt);
+        if (!results) {
+          const request = /Request: (.*)/.exec(text)?.[1] ?? text;
+          return toolCall("webSearch", { query: request });
+        }
+        return reply(
+          overrides.research
+            ? overrides.research(results)
+            : fakeResearch(results),
+        );
+      }
       if (!text.includes("\nCandidates:\n")) {
         const answer = overrides.interpret
           ? overrides.interpret(text)

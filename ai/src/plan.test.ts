@@ -10,12 +10,14 @@ import type { Member, PlanRequest } from "./types.ts";
 import { describe, expect, test } from "vitest";
 import {
   FakeRestaurantClient,
+  FakeWebClient,
   createFakeLlmModel,
   type FakeLlmOverrides,
 } from "./devFakes.ts";
-import { LlmClient } from "./llm.ts";
+import { LlmClient, MAX_WEB_PLACES } from "./llm.ts";
 import { PlannerError, planEvent, type PlanDeps } from "./plan.ts";
 import type { RestaurantClient, RestaurantQuery } from "./restaurants.ts";
+import type { WebResult } from "./webSearch.ts";
 
 // Saturday 2026-10-03 11:00 local (Waterloo, EDT).
 const NOW = new Date("2026-10-03T15:00:00Z");
@@ -599,5 +601,100 @@ describe("planEvent guards against bad model output", () => {
     await expect(
       planEvent(request([user()]), deps({ rank: () => ({ picks: [] }) })),
     ).rejects.toBeInstanceOf(PlannerError);
+  });
+});
+
+describe("planEvent with web search", () => {
+  const spyRestaurants = () => {
+    const queries: string[] = [];
+    const client: RestaurantClient = {
+      search: async (q) => {
+        queries.push(q.query ?? "");
+        return new FakeRestaurantClient().search(q);
+      },
+    };
+    return { client, queries };
+  };
+  const webDeps = (
+    overrides: FakeLlmOverrides = {},
+    restaurants: RestaurantClient = new FakeRestaurantClient(),
+  ): PlanDeps => ({
+    ...deps(overrides, restaurants),
+    web: new FakeWebClient(),
+  });
+
+  test("adds places the web recommends, found again on the places search, with what the pages say", async () => {
+    const { client, queries } = spyRestaurants();
+    const r = await planEvent(request([user()], "ramen"), webDeps({}, client));
+    if (r.status !== "ok") throw new Error("expected ok");
+    // The places search for "ramen" finds only Noodle House; Spice Route comes from the web.
+    expect(queries).toContain("Spice Route");
+    const spice = r.candidates.find((c) => c.name === "Spice Route");
+    expect(spice?.source).toBe("fake");
+    expect(spice?.web?.note).toBeTruthy();
+    expect(spice?.web?.sources[0]?.url).toMatch(/^https:\/\//);
+    // A place both searches found is listed once, with the web's note.
+    const noodles = r.candidates.filter((c) => c.name === "Noodle House");
+    expect(noodles).toHaveLength(1);
+    expect(noodles[0]!.web).toBeDefined();
+  });
+
+  test("drops a web place the places search can't find", async () => {
+    const r = await planEvent(
+      request([user()], "ramen"),
+      webDeps({
+        research: (results: WebResult[]) => ({
+          places: [
+            {
+              name: "Nowhere Cafe",
+              note: "Viral.",
+              sourceUrls: [results[0]!.url],
+            },
+          ],
+        }),
+      }),
+    );
+    if (r.status !== "ok") throw new Error("expected ok");
+    expect(r.candidates.some((c) => c.web)).toBe(false);
+  });
+
+  test("looks up at most MAX_WEB_PLACES web places on the places search", async () => {
+    const { client, queries } = spyRestaurants();
+    await planEvent(
+      request([user()], "ramen"),
+      webDeps(
+        {
+          research: (results: WebResult[]) => ({
+            places: Array.from({ length: MAX_WEB_PLACES + 3 }, (_, i) => ({
+              name: `Place ${i}`,
+              note: "Popular.",
+              sourceUrls: [results[0]!.url],
+            })),
+          }),
+        },
+        client,
+      ),
+    );
+    expect(queries).toHaveLength(1 + MAX_WEB_PLACES);
+  });
+
+  test("the ranker sees what the web says about each place", async () => {
+    let seen: { name: string; web?: unknown }[] = [];
+    await planEvent(
+      request([user()], "ramen"),
+      webDeps({
+        rank: (candidates, n) => {
+          seen = candidates;
+          return {
+            picks: candidates
+              .slice(0, n)
+              .map((c) => ({ candidateId: c.id, rationale: "Fine." })),
+          };
+        },
+      }),
+    );
+    expect(seen.find((c) => c.name === "Spice Route")?.web).toEqual(
+      expect.any(String),
+    );
   });
 });
