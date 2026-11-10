@@ -122,7 +122,9 @@ function pill(
   return { svg: rect + text, width: w };
 }
 
-function previewSvg(event: PreviewEvent, host: string): string {
+// The host sits in the corner past the pills when it fits there; a long one,
+// such as a cloud endpoint, would run under them, so it is left out.
+export function previewSvg(event: PreviewEvent, host: string): string {
   const card = { x: 36, y: 36, w: width - 72, h: height - 72 };
   const pad = 72;
   const left = card.x + pad;
@@ -140,6 +142,11 @@ function previewSvg(event: PreviewEvent, host: string): string {
   const pillTop = card.y + card.h - pad - 96;
   const out = pill(left, pillTop, "Can't make it", false);
   const inn = pill(left + out.width + 20, pillTop, "I'm in", true);
+  const hostRoom = right - (left + out.width + 20 + inn.width) - 40;
+  const hostText =
+    textWidth(host, 28) <= hostRoom
+      ? `<text x="${right}" y="${pillTop + 60}" text-anchor="end" font-family="Inter" font-weight="400" font-size="28" fill="#737373">${escape(host)}</text>`
+      : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
 <rect width="${width}" height="${height}" fill="#f5f5f5"/>
 <rect x="${card.x}" y="${card.y}" width="${card.w}" height="${card.h}" rx="40" fill="#ffffff" stroke="#e5e5e5" stroke-width="2"/>
@@ -147,7 +154,7 @@ function previewSvg(event: PreviewEvent, host: string): string {
 ${calendarGlyph(left, rangeTop)}
 <text x="${left + 58}" y="${rangeTop + 33}" font-family="Inter" font-weight="400" font-size="36" fill="#737373">${escape(approxRange(event.windowStart, event.windowEnd))}</text>
 ${out.svg}${inn.svg}
-<text x="${right}" y="${pillTop + 60}" text-anchor="end" font-family="Inter" font-weight="400" font-size="28" fill="#737373">${escape(host)}</text>
+${hostText}
 </svg>`;
 }
 

@@ -21,6 +21,7 @@ const env = z
     PORT: z.coerce.number().int().positive().default(3001),
     PUBLIC_URL: z.string().default(""),
     APP_STORE_URL: z.string().default(""),
+    APPLE_TEAM_ID: z.string().default(""),
     DATABASE_URL: z.string().min(1),
     NODE_ENV: z.string().default("development"),
     AWS_REGION: z.string().default("ca-central-1"),
@@ -59,6 +60,7 @@ const app = createApp(pgDb(pool), {
   invites: {
     publicUrl: env.PUBLIC_URL || undefined,
     appStoreUrl: env.APP_STORE_URL || undefined,
+    appleTeamId: env.APPLE_TEAM_ID || undefined,
   },
 });
 serve({ fetch: app.fetch, port: env.PORT }, () =>

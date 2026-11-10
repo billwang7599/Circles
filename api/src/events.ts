@@ -16,6 +16,7 @@ import {
 } from "@circles/shared";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { z } from "zod";
 import { account, type AppEnv } from "./auth.ts";
 import { body } from "./body.ts";
 import type { Db, Tx } from "./db.ts";
@@ -296,6 +297,43 @@ export function events(
     assertOrganizer(event, accountId, "delete");
     await db.query("delete from events where id = $1", [event.id]);
     return c.json({ ok: true });
+  });
+
+  // Someone goes off the list, answers and all, and the options made with
+  // them are stale. The organizer's own row stays: it is how they are in.
+  app.delete("/events/:id/responses/:responseId", async (c) => {
+    const accountId = account(c);
+    const event = await requireEvent(db, c.req.param("id"));
+    assertOrganizer(event, accountId, "remove someone from");
+    const responseId = c.req.param("responseId");
+    const [response] = z.uuid().safeParse(responseId).success
+      ? await db.query<{ accountId: string | null }>(
+          `select account_id as "accountId" from responses
+           where id = $1 and event_id = $2`,
+          [responseId, event.id],
+        )
+      : [];
+    if (!response)
+      throw new HTTPException(404, { message: "Response not found" });
+    if (response.accountId === event.organizerId)
+      throw new HTTPException(400, {
+        message: "The organizer can't be removed",
+      });
+    await db.transaction(async (tx) => {
+      await tx.query("delete from responses where id = $1", [responseId]);
+      await tx.query("update events set version = version + 1 where id = $1", [
+        event.id,
+      ]);
+    });
+    const after = await requireEvent(db, event.id);
+    return c.json(
+      (await eventView(
+        db,
+        after,
+        accountId,
+        originOf(invites, c),
+      )) satisfies EventView,
+    );
   });
 
   return app;

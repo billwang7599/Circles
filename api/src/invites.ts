@@ -47,6 +47,9 @@ export type InviteOptions = {
   publicUrl?: string;
   // Where an invitee can get the app; no button without it.
   appStoreUrl?: string;
+  // The Apple team the iOS app is signed with; iOS opens the links in the
+  // app only once it is named.
+  appleTeamId?: string;
 };
 
 type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
@@ -54,6 +57,8 @@ type Issues = Partial<Record<string, string>>;
 
 const maxResponses = 100;
 const tokenDays = 180;
+// mobile/app.json, ios.bundleIdentifier.
+const bundleId = "ca.circles.app";
 
 const hash = (token: string) =>
   createHash("sha256").update(token).digest("hex");
@@ -87,6 +92,29 @@ async function responseByToken(
 
 const bump = (tx: Tx, eventId: string) =>
   tx.query("update events set version = version + 1 where id = $1", [eventId]);
+
+// Names match give or take case and spacing: the only identity an invitee has.
+const nameKey = (name: string) =>
+  name.trim().replace(/\s+/g, " ").toLowerCase();
+
+// Someone already in under this name, the first if there are several. Only a
+// row no account holds can be it: a row claimed in the app, the organizer's
+// included, has an identity beyond its name, and a web visitor must not
+// become them.
+async function sameNamed(
+  db: Db,
+  event: EventRow,
+  name: string,
+): Promise<{ id: string; name: string } | undefined> {
+  const rows = await db.query<{ id: string; name: string }>(
+    `select id, name from responses
+     where event_id = $1 and attending and account_id is null
+     order by created_at`,
+    [event.id],
+  );
+  const key = nameKey(name);
+  return rows.find((row) => nameKey(row.name) === key);
+}
 
 // Form reading
 
@@ -283,6 +311,32 @@ async function saveRsvp(
     await bump(tx, event.id);
     return { token: fresh };
   });
+}
+
+// This browser becomes the one that opens an existing response: a fresh
+// token replaces the one the browser that made it holds, so that browser is
+// asked the same question next time, and the row stays one person. The
+// answers do not come along: a first name is all anyone with the link needs
+// to say "That's me", so they must not read back what the first browser
+// said, budget least of all. The row counts as unanswered until this
+// browser answers, which also marks the options stale.
+async function takeOver(
+  db: Db,
+  event: EventRow,
+  twin: { id: string },
+  attending: boolean,
+): Promise<string> {
+  const fresh = newToken();
+  await db.transaction(async (tx) => {
+    await tx.query(
+      `update responses
+         set token_hash = $2, attending = $3, answers = null
+       where id = $1`,
+      [twin.id, hash(fresh), attending],
+    );
+    await bump(tx, event.id);
+  });
+  return fresh;
 }
 
 async function saveAnswers(
@@ -795,6 +849,10 @@ function questionsPage(
 // With a store to send people to, the card sells the app; without one, it
 // only opens the app for someone who already has it.
 function appCard(event: EventRow, token: string, options: InviteOptions) {
+  // A Universal Link: the app where it is installed and iOS hands the link
+  // over, this page again anywhere else.
+  // The app's own scheme: a Universal Link to this same site stays in the
+  // browser by Apple's rule, so only the scheme opens an installed app here.
   const open = `circles://invite?slug=${event.slug}&g=${encodeURIComponent(token)}`;
   return html`<aside class="app">
     <div class="app-mark">${markIcon}</div>
@@ -879,6 +937,35 @@ function declinedPage(event: EventRow, token: string, options: InviteOptions) {
 const rsvpPage = (event: EventRow, name: string, issues: Issues) =>
   html`${header(event)}${rsvpForm(event, undefined, name, issues)}`;
 
+// The name is already on the list as someone who is in: the same person
+// from another browser, or a second person with the name. Nothing of the
+// first is shown; the answer comes back with the RSVP it interrupted.
+function samePage(
+  event: EventRow,
+  taken: string,
+  name: string,
+  attending: boolean,
+) {
+  return html`${header(event)}
+    <form method="post" action="/i/${event.slug}" class="rsvp">
+      <input type="hidden" name="name" value="${name}" />
+      <input
+        type="hidden"
+        name="attending"
+        value="${attending ? "in" : "out"}"
+      />
+      <h2 class="hl" id="same-lbl">Someone named ${taken} is already in</h2>
+      <div class="pair" role="group" aria-labelledby="same-lbl">
+        <button class="btn" type="submit" name="same" value="no">
+          Someone else
+        </button>
+        <button class="btn" type="submit" name="same" value="yes">
+          That's me
+        </button>
+      </div>
+    </form>`;
+}
+
 let iconPng: Promise<Buffer> | undefined;
 
 // Public pages: GET/POST /i/:slug, GET /i/:slug/preview.png, GET /i/icon.png.
@@ -900,6 +987,24 @@ export function invitePages(db: Db, options: InviteOptions = {}) {
     "That didn't come from the invite page",
     "Open the link again to answer.",
   );
+
+  // Tells iOS which app opens /i/<slug>?g=… instead of the page. A link
+  // without a token stays a page: the app has no screen for it.
+  if (options.appleTeamId)
+    app.get("/.well-known/apple-app-site-association", (c) =>
+      c.json({
+        applinks: {
+          details: [
+            {
+              appIDs: [`${options.appleTeamId}.${bundleId}`],
+              // "?*" is one or more characters: a bare "*" also matches a
+              // link with no g at all, which has no screen in the app.
+              components: [{ "/": "/i/*", "?": { g: "?*" } }],
+            },
+          ],
+        },
+      }),
+    );
 
   app.get("/i/icon.png", async (c) => {
     iconPng ??= readFile(new URL("../assets/icon.png", import.meta.url));
@@ -1021,6 +1126,25 @@ export function invitePages(db: Db, options: InviteOptions = {}) {
         page(event, origin, content, response ? [script] : []),
         400,
       );
+    }
+    if (!response) {
+      // A name already in, from a browser that knows no response here: asked
+      // once whether it is the same person; the answer rides on the form.
+      const twin = await sameNamed(db, event, rsvp.name!);
+      const same = field(form, "same");
+      if (twin && same !== "yes" && same !== "no")
+        return c.html(
+          page(
+            event,
+            origin,
+            samePage(event, twin.name, rsvp.name!, rsvp.attending),
+          ),
+        );
+      if (twin && same === "yes") {
+        const fresh = await takeOver(db, event, twin, rsvp.attending);
+        setCookie(c, cookieName(slug), fresh, cookieOptions(slug, c));
+        return c.redirect(`/i/${slug}`, 303);
+      }
     }
     const saved = await saveRsvp(db, event, response, token, rsvp);
     if ("full" in saved)

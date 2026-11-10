@@ -13,6 +13,7 @@ import * as SystemUI from "expo-system-ui";
 import { useEffect, useRef } from "react";
 import { AppState, StatusBar } from "react-native";
 import { isRefusal } from "../api";
+import { inviteParams } from "../inviteLink";
 import { useSignedIn } from "../session";
 import { useTheme } from "../ui/theme";
 
@@ -48,23 +49,20 @@ export default function RootLayout() {
   // An invite link opened while signed out waits for the sign-in, then lands.
   useEffect(() => {
     if (!signedIn || !url || handled.current === url) return;
-    const { hostname, path, queryParams } = Linking.parse(url);
-    // A custom-scheme link such as circles://invite?… carries its first
-    // segment as the hostname, with no path.
-    if ((path || hostname) !== "invite") return;
+    const params = inviteParams(Linking.parse(url));
+    if (!params) return;
+    // A link opened while signed in is routed natively and is already on
+    // its screen: remember it, or the same URL would be replayed the next
+    // time Home is reached.
+    if (pathname === "/invite" || pathname.startsWith("/i/")) {
+      handled.current = url;
+      return;
+    }
     // The protected stack lands on Home once signed in; a replace before
-    // that is undone by it, and a link opened while signed in has already
-    // been routed.
+    // that is undone by it.
     if (pathname !== "/") return;
     handled.current = url;
-    const param = (name: string) => {
-      const value = queryParams?.[name];
-      return typeof value === "string" ? value : undefined;
-    };
-    router.replace({
-      pathname: "/invite",
-      params: { slug: param("slug"), g: param("g") },
-    });
+    router.replace({ pathname: "/invite", params });
   }, [signedIn, url, pathname]);
   useEffect(() => {
     void SystemUI.setBackgroundColorAsync(colors.background);
@@ -92,6 +90,7 @@ export default function RootLayout() {
           <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="profile" options={{ title: "" }} />
           <Stack.Screen name="invite" options={{ title: "" }} />
+          <Stack.Screen name="i/[slug]" options={{ title: "" }} />
           <Stack.Screen
             name="events/new"
             options={{ title: "", presentation: "modal" }}

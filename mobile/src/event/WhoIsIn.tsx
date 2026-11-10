@@ -5,6 +5,7 @@ import { Avatar } from "../ui/Avatar";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Empty } from "../ui/Empty";
+import { IconButton } from "../ui/IconButton";
 import { Section } from "../ui/Section";
 import { Text } from "../ui/Text";
 import { space } from "../ui/theme";
@@ -52,7 +53,10 @@ type Props = {
   isOrganizer: boolean;
   onAnswers?: () => void;
   answersPending: boolean;
-  answersError?: string;
+  // The organizer takes someone else off the list; not once the event has
+  // ended.
+  onRemove?: (response: ResponseView) => void;
+  error?: string;
 };
 
 export function WhoIsIn({
@@ -60,7 +64,8 @@ export function WhoIsIn({
   isOrganizer,
   onAnswers,
   answersPending,
-  answersError,
+  onRemove,
+  error,
 }: Props) {
   const sorted = [...responses].sort((a, b) => rank(a) - rank(b));
   // The long answers opened in full, by response and position.
@@ -88,6 +93,8 @@ export function WhoIsIn({
               : !mine && !response.answered
                 ? statusOf(response)
                 : undefined;
+            const remove =
+              onRemove && !response.you ? () => onRemove(response) : undefined;
             return (
               <View
                 key={response.id}
@@ -96,6 +103,13 @@ export function WhoIsIn({
                 accessibilityLabel={`${response.name}, ${statusOf(response)}${response.answers
                   .map((line) => `. ${line.title}: ${line.text}`)
                   .join("")}`}
+                // The row reads as one; its button is reached as an action.
+                accessibilityActions={
+                  remove
+                    ? [{ name: "remove", label: `Remove ${response.name}` }]
+                    : undefined
+                }
+                onAccessibilityAction={remove}
               >
                 <Avatar
                   name={response.name}
@@ -123,6 +137,15 @@ export function WhoIsIn({
                       />
                     ) : response.you ? (
                       <Text color="textMuted">You</Text>
+                    ) : remove ? (
+                      <View style={styles.remove}>
+                        <IconButton
+                          icon="xmark"
+                          label={`Remove ${response.name}`}
+                          iconSize={18}
+                          onPress={remove}
+                        />
+                      </View>
                     ) : null}
                   </View>
                   {status ? <Text color="textMuted">{status}</Text> : null}
@@ -169,7 +192,7 @@ export function WhoIsIn({
           })}
         </Card>
       )}
-      {answersError ? <Text color="danger">{answersError}</Text> : null}
+      {error ? <Text color="danger">{error}</Text> : null}
     </Section>
   );
 }
@@ -191,6 +214,9 @@ const styles = StyleSheet.create({
     minHeight: 36,
   },
   grow: { flex: 1 },
+  // A 44 pt target that keeps the row at the avatar's height and its glyph
+  // where the row's padding would put it.
+  remove: { marginVertical: -4, marginRight: -(space.lg - space.xs) },
   // Each answer is its question's title over what they said: short ones two
   // to a line, like the items on an option card's days; a long or lone one
   // takes the line.

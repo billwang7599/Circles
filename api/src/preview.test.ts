@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { fitTitle, previewPng } from "./preview.ts";
+import { fitTitle, previewPng, previewSvg } from "./preview.ts";
 
 const event = {
   id: "e1",
@@ -33,6 +33,12 @@ test("caches per event and what is drawn", async () => {
   expect(
     await previewPng({ ...event, windowEnd: "2026-12-31" }, "circles.app"),
   ).not.toBe(a);
+});
+
+test("the host is drawn only when it fits past the pills", () => {
+  expect(previewSvg(event, "circles.app")).toContain(">circles.app<");
+  const long = "ci-889f2eab7cae4e068cc6b522abc6fa1c.ecs.ca-central-1.on.aws";
+  expect(previewSvg(event, long)).not.toContain(long);
 });
 
 test("takes any title and short window", async () => {

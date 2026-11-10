@@ -112,3 +112,16 @@ ECS in `ca-central-1`). The ECS service needs `COGNITO_USER_POOL_ID` and `COGNIT
 and `PUBLIC_URL` for the invite links and preview images; `APP_STORE_URL` adds the Get the app button to the invite page.
 Phones point at the AWS API via `EXPO_PUBLIC_API_URL`. EAS `preview` and `production` builds get it and
 `EXPO_PUBLIC_COGNITO_CLIENT_ID` from `env` in `mobile/eas.json`.
+
+**Opening invite links in the app**
+The invite page's Open in the app link is `circles://invite?slug=<slug>&g=<token>`, the app's own scheme: on a phone
+with the app it opens the app, on one without it Safari says the address is invalid. It cannot be a Universal Link,
+because Apple keeps a link tapped on a page of the same site in Safari. The app also opens
+`https://<PUBLIC_URL host>/i/<slug>?g=<token>` as a Universal Link when such a link arrives from Messages, Mail or
+another app. Two things make that work: the API serves `/.well-known/apple-app-site-association` naming the app,
+`<APPLE_TEAM_ID>.ca.circles.app`, once `APPLE_TEAM_ID` (the team's ID from App Store Connect, Membership details) is set
+on the ECS service, and the app's `ios.associatedDomains` in `mobile/app.json` names the API host. The entitlement is
+baked into the build, so a new host or team needs a new EAS build, and iOS reads the association file when it installs
+the app and about weekly after. Only links carrying a `g` open the app; the shared invite link stays a web page, since
+the app has no screen for it. The organizer's Add my answers link opens in Safari even from the app, as Apple sends an
+app's own Universal Links to the browser.

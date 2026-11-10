@@ -11,7 +11,12 @@ import type {
   ReadDates,
   UpdateName,
 } from "@circles/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import Constants from "expo-constants";
 import { useRef } from "react";
 import { NativeModules, Platform } from "react-native";
@@ -158,21 +163,41 @@ export function useEvent(id: string) {
   });
 }
 
-// The result is the event's new view, written straight into the cache so
-// the screen never shows older state.
-export function useEditEvent(id: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: EditEvent) =>
-      request<EventView>(`/api/events/${id}`, body, "PUT"),
-    onSuccess: async (view) => {
+// For a change whose result is the event's new view: written straight into
+// the cache so the screen never shows older state.
+function replacesView(queryClient: QueryClient, id: string) {
+  return {
+    onSuccess: async (view: EventView) => {
       // A poll already in flight would land after this and show older state.
       await queryClient.cancelQueries({ queryKey: keys.event(id) });
       queryClient.setQueryData(keys.event(id), view);
       void queryClient.invalidateQueries({ queryKey: keys.me });
     },
-    // A refused edit usually means the screen is stale: show what is true now.
+    // A refused change usually means the screen is stale: show what is true now.
     onError: () => queryClient.invalidateQueries({ queryKey: keys.event(id) }),
+  };
+}
+
+export function useEditEvent(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: EditEvent) =>
+      request<EventView>(`/api/events/${id}`, body, "PUT"),
+    ...replacesView(queryClient, id),
+  });
+}
+
+// The organizer takes someone off the list, answers and all.
+export function useRemoveResponse(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (responseId: string) =>
+      request<EventView>(
+        `/api/events/${id}/responses/${responseId}`,
+        undefined,
+        "DELETE",
+      ),
+    ...replacesView(queryClient, id),
   });
 }
 

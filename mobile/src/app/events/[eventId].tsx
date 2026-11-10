@@ -7,6 +7,7 @@ import {
   type Detail,
   type Question,
   type QuestionKind,
+  type ResponseView,
 } from "@circles/shared";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -27,6 +28,7 @@ import {
   useEditEvent,
   useEvent,
   useMakeItineraries,
+  useRemoveResponse,
 } from "../../api";
 import { Itineraries } from "../../event/Itineraries";
 import { QuestionEditor } from "../../event/QuestionEditor";
@@ -47,11 +49,29 @@ import { eventTone, radius, space, useTheme } from "../../ui/theme";
 
 const allKinds: QuestionKind[] = ["dates", "budget", "choice", "text"];
 
+// Alert has no web implementation; the browser's confirm stands in.
+function confirmDestructive(
+  title: string,
+  message: string,
+  action: string,
+  onConfirm: () => void,
+) {
+  if (Platform.OS === "web") {
+    if (window.confirm(`${title}\n\n${message}`)) onConfirm();
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: "Cancel", style: "cancel" },
+    { text: action, style: "destructive", onPress: onConfirm },
+  ]);
+}
+
 export default function Event() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const event = useEvent(eventId);
   const edit = useEditEvent(eventId);
   const remove = useDeleteEvent(eventId);
+  const removal = useRemoveResponse(eventId);
   const make = useMakeItineraries(eventId);
   const answers = useAnswersLink(eventId);
   const { colors } = useTheme();
@@ -142,18 +162,23 @@ export default function Event() {
   }
 
   function deleteEvent() {
-    const onConfirm = () =>
-      remove.mutate(undefined, { onSuccess: () => router.dismissTo("/") });
-    // Alert has no web implementation; the browser's confirm stands in.
-    if (Platform.OS === "web") {
-      if (window.confirm("Delete event\n\nThis removes it for everyone."))
-        onConfirm();
-      return;
-    }
-    Alert.alert("Delete event", "This removes it for everyone.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: onConfirm },
-    ]);
+    confirmDestructive(
+      "Delete event",
+      "This removes it for everyone.",
+      "Delete",
+      () =>
+        remove.mutate(undefined, { onSuccess: () => router.dismissTo("/") }),
+    );
+  }
+
+  function removePerson(response: ResponseView) {
+    if (removal.isPending) return;
+    confirmDestructive(
+      `Remove ${response.name}`,
+      "Their answers go too. They can answer again from the link.",
+      "Remove",
+      () => removal.mutate(response.id),
+    );
   }
 
   function menu() {
@@ -361,7 +386,12 @@ export default function Event() {
         isOrganizer={isOrganizer}
         onAnswers={ended ? undefined : openAnswers}
         answersPending={answers.isPending}
-        answersError={isOrganizer ? answers.error?.message : undefined}
+        onRemove={isOrganizer && !ended ? removePerson : undefined}
+        error={
+          isOrganizer
+            ? (answers.error?.message ?? removal.error?.message)
+            : undefined
+        }
       />
 
       {hasOptions || canMake || !isOrganizer ? (

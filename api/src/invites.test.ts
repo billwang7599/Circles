@@ -231,6 +231,7 @@ test("answers merge the days into ranges, keep the budget to the page and bump t
   expect(done).toContain(`href="/i/${event.slug}?edit"`);
   expect(done).toContain("Can't make it after all");
   expect(done).toContain(`href="${store}"`);
+  // The app's scheme, not a link to this same site, which Safari would keep.
   expect(done).toContain(
     `href="circles://invite?slug=${event.slug}&amp;g=${encodeURIComponent(tokenOf(cookie))}"`,
   );
@@ -378,6 +379,115 @@ test("sending the same answers or RSVP again changes nothing", async () => {
   expect(await stored(event.id, "Benjamin")).toMatchObject({ attending: true });
 });
 
+test("a name already in is asked whether it is the same person, and That's me takes the response over", async () => {
+  const event = await makeEvent();
+  const names = async () =>
+    (
+      await db.query<{ name: string }>(
+        "select name from responses where event_id = $1 order by created_at",
+        [event.id],
+      )
+    ).map((r) => r.name);
+  const phone = cookieOf(
+    await send(event.slug, { name: "Ben", attending: "in" }),
+  );
+  await send(
+    event.slug,
+    { answers: "1", budget: "600", q_more: "Need to rent skis." },
+    phone,
+  );
+  expect(await version(event.id)).toBe(3);
+
+  // Another browser, the same name give or take case and spacing: the page
+  // asks, writes nothing and shows nothing of Ben's.
+  const asked = await send(event.slug, { name: " ben ", attending: "in" });
+  expect(asked.status).toBe(200);
+  expect(asked.headers.get("set-cookie")).toBeNull();
+  const html = await asked.text();
+  expect(html).toContain("Someone named Ben is already in");
+  expect(html).toContain("That's me");
+  expect(html).toContain("Someone else");
+  expect(html).toMatch(/type="hidden"\s+name="name"\s+value="ben"/);
+  expect(html).toMatch(/type="hidden"\s+name="attending"\s+value="in"/);
+  expect(html).not.toContain("$");
+  expect(html).not.toContain("rent skis");
+  expect(html).not.toContain("<script");
+  expect(await names()).toEqual(["Alex", "Ben"]);
+  expect(await version(event.id)).toBe(3);
+
+  // That's me: this browser opens Ben's response under a token of its own;
+  // the browser that made it no longer does. The answers do not come along,
+  // since a first name is all it took: the row is asked again, and the
+  // options made from it go stale.
+  const laptop = cookieOf(
+    await send(event.slug, { name: "ben", attending: "in", same: "yes" }),
+  );
+  expect(tokenOf(laptop)).not.toBe(tokenOf(phone));
+  const asking = await (await page(event.slug, laptop)).text();
+  expect(asking).toContain("Send my answers");
+  expect(asking).not.toContain("rent skis");
+  expect(asking).not.toMatch(/name="budget"\s+value="[^"]*"\s+checked/);
+  expect(asking).toMatch(/name="budgetOther"\s+value=""/);
+  expect(await names()).toEqual(["Alex", "Ben"]);
+  expect(await version(event.id)).toBe(4);
+  expect(await (await page(event.slug, phone)).text()).toContain(
+    "No app or account needed",
+  );
+
+  // Someone else: a second Ben, with a response of their own.
+  const other = cookieOf(
+    await send(event.slug, { name: "Ben", attending: "in", same: "no" }),
+  );
+  expect(await (await page(event.slug, other)).text()).toContain(
+    "Send my answers",
+  );
+  expect(await names()).toEqual(["Alex", "Ben", "Ben"]);
+  expect(await version(event.id)).toBe(5);
+
+  // The organizer's name is nobody's to take, and a name that can't make it
+  // is not in the way.
+  expect(
+    (await send(event.slug, { name: "Alex", attending: "in" })).status,
+  ).toBe(303);
+  cookieOf(await send(event.slug, { name: "Chloe", attending: "out" }));
+  const chloe = cookieOf(
+    await send(event.slug, { name: "Chloe", attending: "in" }),
+  );
+  expect(await names()).toEqual([
+    "Alex",
+    "Ben",
+    "Ben",
+    "Alex",
+    "Chloe",
+    "Chloe",
+  ]);
+
+  // Can't make it under a name that is in asks too; That's me turns that
+  // response around, which the options have to know.
+  const out = await send(event.slug, { name: "Chloe", attending: "out" });
+  expect(out.status).toBe(200);
+  expect(await out.text()).toMatch(
+    /type="hidden"\s+name="attending"\s+value="out"/,
+  );
+  const was = await version(event.id);
+  const turned = cookieOf(
+    await send(event.slug, { name: "Chloe", attending: "out", same: "yes" }),
+  );
+  expect(await (await page(event.slug, turned)).text()).toContain("No worries");
+  expect(await version(event.id)).toBe(was + 1);
+  expect(await (await page(event.slug, chloe)).text()).toContain(
+    "No app or account needed",
+  );
+  expect(await names()).toEqual([
+    "Alex",
+    "Ben",
+    "Ben",
+    "Alex",
+    "Chloe",
+    "Chloe",
+  ]);
+});
+
 test("with no questions, I'm in goes straight to the confirmation", async () => {
   const event = await makeEvent([]);
   const cookie = cookieOf(
@@ -517,13 +627,13 @@ test("a form posted from another site is turned away", async () => {
 
   // From the page itself, at its public address or the one it was served
   // from, the form goes through.
-  for (const own of [origin, "http://localhost"]) {
-    const sent = await send(
-      event.slug,
-      { name: "Ben", attending: "in" },
-      undefined,
-      { origin: own },
-    );
+  for (const [own, name] of [
+    [origin, "Ben"],
+    ["http://localhost", "Bea"],
+  ]) {
+    const sent = await send(event.slug, { name, attending: "in" }, undefined, {
+      origin: own,
+    });
     expect(sent.status).toBe(303);
   }
 });
@@ -531,13 +641,18 @@ test("a form posted from another site is turned away", async () => {
 test("behind a proxy that ends TLS, with no public URL, the scheme comes from its header", async () => {
   const bare = createApp(db, { verifier: devVerifier });
   const event = await makeEvent();
-  const rsvp = { name: "Ben", attending: "in" };
-  const plain = await send(event.slug, rsvp, undefined, {}, bare);
+  const plain = await send(
+    event.slug,
+    { name: "Ben", attending: "in" },
+    undefined,
+    {},
+    bare,
+  );
   expect(plain.status).toBe(303);
   expect(plain.headers.get("set-cookie")).not.toContain("Secure");
   const forwarded = await send(
     event.slug,
-    rsvp,
+    { name: "Bea", attending: "in" },
     undefined,
     { "x-forwarded-proto": "https" },
     bare,
@@ -858,6 +973,36 @@ test("an answers link mints a fresh token and retires the old one", async () => 
   ).toContain("No worries");
 });
 
+test("a response someone claimed in the app is nobody's to take over by name", async () => {
+  const event = await makeEvent();
+  const cookie = cookieOf(
+    await send(event.slug, { name: "Bill", attending: "in" }),
+  );
+  const bill = "dev:bill-claims@example.com";
+  expect(
+    (
+      await call("POST", `/api/invites/${event.slug}/claim`, bill, {
+        token: tokenOf(cookie),
+      })
+    ).status,
+  ).toBe(200);
+  // The same name from a browser that knows no response is a new person,
+  // not a question about Bill's row.
+  const other = await send(event.slug, { name: "bill", attending: "in" });
+  expect(other.status).toBe(303);
+  expect(await other.text()).not.toContain("already in");
+  expect(
+    await db.query<{ name: string; claimed: boolean }>(
+      `select name, account_id is not null as claimed from responses
+       where event_id = $1 and lower(name) = 'bill' order by created_at`,
+      [event.id],
+    ),
+  ).toEqual([
+    { name: "Bill", claimed: true },
+    { name: "bill", claimed: false },
+  ]);
+});
+
 test("once the window has passed, the link says so and takes nothing", async () => {
   const organizerToken = await named("Alex");
   const organizerId = await accountId(organizerToken);
@@ -900,4 +1045,26 @@ test("once the window has passed, the link says so and takes nothing", async () 
     ),
   ).toEqual([{ count: 2 }]);
   expect(await version(id)).toBe(1);
+});
+
+test("iOS is told which app opens the links, once a team is named", async () => {
+  const path = "/.well-known/apple-app-site-association";
+  const res = await createApp(db, {
+    verifier: devVerifier,
+    invites: { publicUrl: origin, appleTeamId: "ABCDE12345" },
+  }).request(path);
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toMatch(/^application\/json\b/);
+  expect(await res.json()).toEqual({
+    applinks: {
+      details: [
+        {
+          appIDs: ["ABCDE12345.ca.circles.app"],
+          components: [{ "/": "/i/*", "?": { g: "?*" } }],
+        },
+      ],
+    },
+  });
+  // Without a team there is no app to name, so iOS finds nothing.
+  expect((await app.request(path)).status).toBe(404);
 });

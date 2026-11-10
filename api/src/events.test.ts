@@ -342,6 +342,74 @@ test("the organizer deletes an event; unknown ids are 404", async () => {
   expect(await bogus.json()).toEqual({ error: "Event not found" });
 });
 
+test("the organizer removes someone, which makes the options stale; nobody else can, and not the organizer's own row", async () => {
+  const nicky = await named("Nicky");
+  const bill = await named("Bill");
+  const created = await createEvent(nicky);
+  const { id } = created.event;
+  const budget = created.event.questions.find((q) => q.kind === "budget")!;
+  await respond(id, {
+    name: "Bill",
+    attending: true,
+    answers: {},
+    accountId: await accountId(bill),
+  });
+  await respond(id, {
+    name: "Chloe",
+    attending: true,
+    answers: { [budget.id]: { kind: "budget", max: 12345 } },
+  });
+  const before = await view(id, nicky);
+  const [me, , chloe] = before.responses;
+  const path = (responseId: string) =>
+    `/api/events/${id}/responses/${responseId}`;
+  expect(await version(id)).toBe(1);
+
+  // A respondent, even one who is in, cannot; the row stays.
+  const refused = await call("DELETE", path(chloe!.id), bill);
+  expect(refused.status).toBe(403);
+  expect(await refused.json()).toEqual({
+    error: "Only the organizer can remove someone from this event",
+  });
+  expect((await call("DELETE", path(chloe!.id), newToken())).status).toBe(403);
+  expect((await view(id, nicky)).responses).toHaveLength(3);
+  expect(await version(id)).toBe(1);
+
+  const removed = await call("DELETE", path(chloe!.id), nicky);
+  expect(removed.status).toBe(200);
+  const after = await json<EventView>(removed);
+  expect(after.responses.map((r) => r.name)).toEqual(["Nicky", "Bill"]);
+  expect(JSON.stringify(after)).not.toContain("12345");
+  expect(await version(id)).toBe(2);
+  expect(await view(id, nicky)).toEqual(after);
+
+  // Gone is gone, junk is nothing, another event's row is not this one's.
+  expect((await call("DELETE", path(chloe!.id), nicky)).status).toBe(404);
+  expect((await call("DELETE", path("not-an-id"), nicky)).status).toBe(404);
+  const otherEvent = await createEvent(nicky);
+  expect(
+    (
+      await call(
+        "DELETE",
+        `/api/events/${otherEvent.event.id}/responses/${me!.id}`,
+        nicky,
+      )
+    ).status,
+  ).toBe(404);
+  expect(
+    (await call("DELETE", `/api/events/not-an-id/responses/${me!.id}`, nicky))
+      .status,
+  ).toBe(404);
+
+  const own = await call("DELETE", path(me!.id), nicky);
+  expect(own.status).toBe(400);
+  expect(await own.json()).toEqual({
+    error: "The organizer can't be removed",
+  });
+  expect((await view(id, nicky)).responses).toHaveLength(2);
+  expect(await version(id)).toBe(2);
+});
+
 test("a rename reaches the account's own responses", async () => {
   const nicky = await named("Nicky");
   const { event } = await createEvent(nicky);
