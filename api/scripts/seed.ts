@@ -1,15 +1,13 @@
+// Seeds a local database with one organizer, one ski trip and three responses.
+// Usage: npm run seed -w api [-- you@example.com]
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
-  areaById,
-  Part,
-  windowFor,
-  type AreaId,
-  type CircleEmoji,
-  type MembershipResponse,
-  type PlanView,
-  type PreferenceId,
-  type RegistrationInput,
+  addDays,
+  datesIn,
+  presetWindow,
+  type EventView,
+  type Question,
 } from "@circles/shared";
 import { Pool } from "pg";
 import { createApp } from "../src/app.ts";
@@ -17,69 +15,8 @@ import { devVerifier } from "../src/auth.ts";
 import { pgDb } from "../src/db.ts";
 import { migrate } from "../src/migrate.ts";
 
-type Member = {
-  name: string;
-  budgetCents?: number;
-  busy?: [dayOffset: number, part: Part][];
-  preferences?: PreferenceId[];
-};
-
-type Circle = {
-  name: string;
-  emoji: CircleEmoji;
-  code: string;
-  plan: { title: string; areaId: AreaId };
-  members: Member[];
-};
-
-const circles: Circle[] = [
-  {
-    name: "Roommates",
-    emoji: "🏠",
-    code: "FSQWWV",
-    plan: { title: "Dinner Friday", areaId: "uptown" },
-    members: [
-      {
-        name: "Maya",
-        budgetCents: 4000,
-        busy: [[1, "morning"]],
-        preferences: ["ramen", "bar"],
-      },
-      {
-        name: "Jordan",
-        budgetCents: 3000,
-        busy: [[2, "evening"]],
-        preferences: ["korean", "pizza"],
-      },
-      { name: "Priya" },
-    ],
-  },
-  {
-    name: "SE Friends",
-    emoji: "🎓",
-    code: "YQLJVS",
-    plan: { title: "Coffee before lecture", areaId: "uw" },
-    members: [
-      { name: "Elena", budgetCents: 1500, preferences: ["coffee"] },
-      {
-        name: "Marcus",
-        budgetCents: 2000,
-        busy: [[3, "afternoon"]],
-        preferences: ["coffee", "dessert"],
-      },
-      { name: "Sam", budgetCents: 1200, preferences: ["bubbleTea"] },
-    ],
-  },
-];
-
 const envFile = fileURLToPath(new URL("../.env", import.meta.url));
 if (existsSync(envFile)) process.loadEnvFile(envFile);
-
-const yourEmail = process.argv[2];
-if (yourEmail !== undefined && !/^[^@\s]+@[^@\s]+$/.test(yourEmail)) {
-  process.stderr.write("Usage: npm run seed -w api -- [your@email]\n");
-  process.exit(1);
-}
 
 const url =
   process.env.DATABASE_URL ??
@@ -98,17 +35,19 @@ client.release();
 const db = pgDb(pool);
 const app = createApp(db, { verifier: devVerifier });
 
+const organizer = process.argv[2] ?? "organizer@example.com";
+const description = "Ski trip with Ben and Chloe, somewhere we can drive to";
+
 async function request<T>(
   method: string,
   path: string,
-  token?: string,
   body?: unknown,
 ): Promise<T> {
   const res = await app.request(path, {
     method,
     headers: {
       "content-type": "application/json",
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      authorization: `Bearer dev:${organizer}`,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -118,95 +57,100 @@ async function request<T>(
   return json;
 }
 
-function shiftDate(date: string, days: number) {
-  const d = new Date(`${date}T00:00:00.000Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-const seeded = await db.query<{ name: string }>(
-  "select name from circles where join_code = any($1)",
-  [circles.map((c) => c.code)],
+const [seeded] = await db.query<{ slug: string }>(
+  "select slug from events where description = $1",
+  [description],
 );
-if (seeded.length > 0)
-  print(`Already seeded: ${seeded.map((c) => c.name).join(", ")}`);
-
-const emailOf = (name: string) => `${name.toLowerCase()}@example.com`;
-const tokenOf = (name: string) => `dev:${emailOf(name)}`;
-
-for (const circle of seeded.length > 0 ? [] : circles) {
-  const [owner, ...others] = circle.members;
-  for (const member of circle.members)
-    await request("PUT", "/api/me/name", tokenOf(member.name), {
-      displayName: member.name,
-    });
-  const created = await request<MembershipResponse>(
-    "POST",
-    "/api/circles",
-    tokenOf(owner.name),
-    { name: circle.name, emoji: circle.emoji },
-  );
-  await db.query("update circles set join_code = $1 where id = $2", [
-    circle.code,
-    created.circle.id,
-  ]);
-  for (const member of others) {
-    await request("POST", "/api/circles/join", tokenOf(member.name), {
-      code: circle.code,
-    });
-  }
-
-  const plan = await request<PlanView>(
-    "POST",
-    `/api/circles/${created.circle.id}/plans`,
-    tokenOf(owner.name),
-    {
-      ...circle.plan,
-      ...windowFor("week", areaById(circle.plan.areaId).timezone, new Date()),
-      parts: Part.options,
-    },
-  );
-  for (const member of circle.members) {
-    if (member.budgetCents === undefined) continue;
-    const input: RegistrationInput = {
-      attending: true,
-      budgetCents: member.budgetCents,
-      busy: (member.busy ?? []).map(([offset, part]) => ({
-        date: shiftDate(plan.plan.windowStart, offset),
-        part,
-      })),
-      preferences: member.preferences ?? [],
-    };
-    await request(
-      "PUT",
-      `/api/circles/${created.circle.id}/plans/${plan.plan.id}/registration`,
-      tokenOf(member.name),
-      input,
-    );
-  }
-
-  print(`${circle.name}  ${circle.code}`);
-  for (const { name } of circle.members)
-    print(`  ${name.padEnd(8)}${emailOf(name)}`);
-}
-
-if (yourEmail) {
-  await request("PUT", "/api/me/name", `dev:${yourEmail}`, {
-    displayName: yourEmail.split("@")[0],
+if (seeded) {
+  print(`Already seeded: /i/${seeded.slug}`);
+} else {
+  // Whoever runs it organizes, named after their email.
+  const local = organizer.split("@")[0] || "organizer";
+  await request("PUT", "/api/me/name", {
+    displayName: local[0]!.toUpperCase() + local.slice(1, 40),
   });
-  for (const circle of circles) {
-    const res = await app.request("/api/circles/join", {
+  const today = new Date().toISOString().slice(0, 10);
+  const { event } = await request<EventView>("POST", "/api/events", {
+    description,
+    ...presetWindow("nextTwoMonths", today),
+    timezone: "America/Toronto",
+  });
+  const ofKind = <K extends Question["kind"]>(kind: K) =>
+    event.questions.find((q) => q.kind === kind) as
+      Extract<Question, { kind: K }> | undefined;
+  const choice = ofKind("choice");
+  const text = ofKind("text");
+  const start = event.windowStart;
+  const invitePath = new URL(event.url).pathname;
+
+  // The invite page's form, as a browser sends it back: the RSVP sets the
+  // cookie, and the answers follow with it.
+  async function form(
+    fields: Record<string, string | string[]>,
+    cookie?: string,
+  ) {
+    const data = new URLSearchParams();
+    for (const [name, value] of Object.entries(fields))
+      for (const v of [value].flat()) data.append(name, v);
+    const res = await app.request(invitePath, {
       method: "POST",
       headers: {
-        "content-type": "application/json",
-        authorization: `Bearer dev:${yourEmail}`,
+        "content-type": "application/x-www-form-urlencoded",
+        ...(cookie ? { cookie } : {}),
       },
-      body: JSON.stringify({ code: circle.code }),
+      body: data.toString(),
     });
-    if (!res.ok && res.status !== 409)
-      throw new Error(`join ${circle.code}: ${res.status}`);
+    if (res.status !== 303)
+      throw new Error(`POST ${invitePath}: ${res.status}`);
+    return res.headers.get("set-cookie")?.split(";")[0] ?? "";
   }
-  print(`${yourEmail} is in ${circles.map((c) => c.name).join(" and ")}`);
+
+  const days = (from: number, to: number) =>
+    datesIn(addDays(start, from), addDays(start, to));
+  const fields = (
+    ranges: [number, number][],
+    budget: string,
+    picks: number[],
+    note: string,
+  ) => ({
+    answers: "1",
+    day: ranges.flatMap(([from, to]) => days(from, to)),
+    budgetOther: budget,
+    ...(choice && {
+      [`q_${choice.id}`]: picks.map((i) => choice.choices[i]!.id),
+    }),
+    ...(text && note ? { [`q_${text.id}`]: note } : {}),
+  });
+
+  const responses: [
+    string,
+    boolean,
+    Record<string, string | string[]> | null,
+  ][] = [
+    [
+      "Ben",
+      true,
+      fields(
+        [
+          [10, 13],
+          [24, 27],
+        ],
+        "600",
+        [0, 1],
+        "I can drive",
+      ),
+    ],
+    ["Chloe", true, fields([[11, 13]], "1000", [1], "")],
+    ["Dana", false, null],
+  ];
+  for (const [name, attending, answers] of responses) {
+    const cookie = await form({ name, attending: attending ? "in" : "out" });
+    if (answers) await form(answers, cookie);
+  }
+  print(`${event.title}  ${invitePath}`);
+  for (const [name, attending] of responses)
+    print(`  ${name.padEnd(8)}${attending ? "in" : "out"}`);
 }
+print(`Organizer: ${organizer}`);
 
 await pool.end();

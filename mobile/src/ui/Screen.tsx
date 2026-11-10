@@ -1,12 +1,5 @@
-import { useRef, useState, type ComponentRef, type ReactNode } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  View,
-} from "react-native";
+import { useState, type ReactNode } from "react";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { radius, size, space, useTheme } from "./theme";
 
@@ -15,9 +8,11 @@ type Props = {
   footer?: ReactNode;
   // A footer that floats on the background with no rule above it.
   bareFooter?: boolean;
-  // Content on the raised panel below, as the home screen's circles sit.
+  // Content on the raised chalk panel below, as the home screen's events sit.
   sheet?: ReactNode;
   onRefresh?: () => Promise<unknown>;
+  // Off while something inside is being dragged.
+  scrollEnabled?: boolean;
 };
 
 export function Screen({
@@ -26,12 +21,10 @@ export function Screen({
   bareFooter = false,
   sheet,
   onRefresh,
+  scrollEnabled = true,
 }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const root = useRef<ComponentRef<typeof View>>(null);
-  // Where this screen starts in the window, so the keyboard math counts the header above it.
-  const [top, setTop] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
   async function refresh() {
@@ -44,72 +37,65 @@ export function Screen({
   }
 
   return (
-    <View
-      ref={root}
-      style={[styles.screen, { backgroundColor: colors.background }]}
-      onLayout={() => root.current?.measureInWindow((_x, y) => setTop(y))}
-    >
-      <KeyboardAvoidingView
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
+      <ScrollView
         style={styles.screen}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        // The bottom inset is already padded below, so the keyboard only needs the rest.
-        keyboardVerticalOffset={top - insets.bottom}
+        // The keyboard insets the scroll and brings the focused field above
+        // it; a footer stays under the keyboard until it goes away.
+        automaticallyAdjustKeyboardInsets
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingBottom: sheet
+              ? 0
+              : footer
+                ? space.gutter
+                : insets.bottom + space.gutter,
+          },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        scrollEnabled={scrollEnabled}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={refresh}
+              tintColor={colors.textMuted}
+            />
+          ) : undefined
+        }
       >
-        <ScrollView
-          style={styles.screen}
-          contentContainerStyle={[
-            styles.content,
-            {
-              paddingBottom: sheet
-                ? 0
-                : footer
-                  ? space.gutter
-                  : insets.bottom + space.gutter,
-            },
-          ]}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          refreshControl={
-            onRefresh ? (
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={refresh}
-                tintColor={colors.textMuted}
-              />
-            ) : undefined
-          }
-        >
-          <View style={styles.inner}>{children}</View>
-          {sheet ? (
-            <View
-              style={[
-                styles.sheet,
-                {
-                  backgroundColor: colors.sheet,
-                  paddingBottom: footer ? space.xl : insets.bottom + space.xl,
-                },
-              ]}
-            >
-              <View style={styles.sheetInner}>{sheet}</View>
-            </View>
-          ) : null}
-        </ScrollView>
-        {footer ? (
+        <View style={styles.inner}>{children}</View>
+        {sheet ? (
           <View
             style={[
-              styles.footer,
+              styles.sheet,
               {
-                backgroundColor: colors.background,
-                borderTopColor: colors.border,
-                borderTopWidth: bareFooter ? 0 : 1,
-                paddingBottom: space.md + insets.bottom,
+                backgroundColor: colors.sheet,
+                paddingBottom: footer ? space.xl : insets.bottom + space.xl,
               },
             ]}
           >
-            <View style={styles.footerInner}>{footer}</View>
+            <View style={styles.sheetInner}>{sheet}</View>
           </View>
         ) : null}
-      </KeyboardAvoidingView>
+      </ScrollView>
+      {footer ? (
+        <View
+          style={[
+            styles.footer,
+            {
+              backgroundColor: colors.background,
+              borderTopColor: colors.border,
+              borderTopWidth: bareFooter ? 0 : 1,
+              paddingBottom: space.md + insets.bottom,
+            },
+          ]}
+        >
+          <View style={styles.footerInner}>{footer}</View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -127,7 +113,7 @@ const styles = StyleSheet.create({
   sheet: {
     flexGrow: 1,
     alignSelf: "stretch",
-    marginTop: space.xxl,
+    marginTop: space.xl,
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
     paddingTop: space.xl,
@@ -136,11 +122,10 @@ const styles = StyleSheet.create({
   sheetInner: {
     width: "100%",
     maxWidth: size.maxWidth,
-    paddingHorizontal: space.gutter,
+    paddingHorizontal: space.md,
     gap: space.xxl,
   },
   footer: {
-    borderTopWidth: 1,
     paddingHorizontal: space.gutter,
     paddingTop: space.md,
     alignItems: "center",

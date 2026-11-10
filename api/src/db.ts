@@ -1,6 +1,6 @@
 import { Pool, type PoolClient } from "pg";
 
-type Tx = {
+export type Tx = {
   query<Row>(text: string, params?: unknown[]): Promise<Row[]>;
   exec(sql: string): Promise<void>;
 };

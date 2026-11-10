@@ -1,78 +1,52 @@
 import Feather from "@expo/vector-icons/Feather";
 import { Platform } from "react-native";
-import {
-  SymbolView,
-  type SymbolViewProps,
-  type SymbolWeight,
-} from "expo-symbols";
+import { SymbolView, type SymbolViewProps } from "expo-symbols";
 
 export type IconName =
   | "arrow-left"
   | "arrow-right"
-  | "ban"
   | "calendar"
   | "check"
-  | "chevron-right"
-  | "clock"
-  | "gear"
-  | "hash"
-  | "heart"
+  | "ellipsis"
+  | "grip"
+  | "link"
   | "lock"
-  | "lock-open"
   | "log-out"
   | "mail"
-  | "map"
   | "map-pin"
-  | "moon"
   | "moon-star"
+  | "people"
   | "pencil"
   | "plus"
-  | "search"
   | "share"
-  | "sparkles"
-  | "star"
   | "sun"
   | "sun-moon"
+  | "sunrise"
   | "sunset"
-  | "triangle-alert"
-  | "users"
-  | "wallet"
-  | "xmark"
-  | "zap";
+  | "xmark";
 
 const symbols: Record<IconName, SymbolViewProps["name"]> = {
   "arrow-left": "arrow.left",
   "arrow-right": "arrow.right",
-  ban: "nosign",
   calendar: "calendar",
   check: "checkmark",
-  "chevron-right": "chevron.right",
-  clock: "clock",
-  gear: "gearshape",
-  hash: "number",
-  heart: "heart",
+  ellipsis: "ellipsis",
+  grip: "line.3.horizontal",
+  link: "link",
   lock: "lock",
-  "lock-open": "lock.open",
   "log-out": "rectangle.portrait.and.arrow.right",
   mail: "envelope",
-  map: "map",
   "map-pin": "mappin.and.ellipse",
-  moon: "moon",
   "moon-star": "moon.stars",
   pencil: "pencil",
+  people: "person.2.fill",
   plus: "plus",
-  search: "magnifyingglass",
   share: "square.and.arrow.up",
-  sparkles: "sparkles",
-  star: "star",
   sun: "sun.max",
   "sun-moon": "circle.lefthalf.filled",
-  sunset: "sun.horizon",
-  "triangle-alert": "exclamationmark.triangle",
-  users: "person.2",
-  wallet: "wallet.pass",
+  sunrise: "sunrise",
+  sunset: "sunset",
   xmark: "xmark",
-  zap: "bolt",
 };
 
 // Android and web fall back to Feather, whose names mostly match ours.
@@ -80,53 +54,41 @@ const feather: Record<IconName, React.ComponentProps<typeof Feather>["name"]> =
   {
     "arrow-left": "arrow-left",
     "arrow-right": "arrow-right",
-    ban: "slash",
     calendar: "calendar",
     check: "check",
-    "chevron-right": "chevron-right",
-    clock: "clock",
-    gear: "settings",
-    hash: "hash",
-    heart: "heart",
+    ellipsis: "more-horizontal",
+    grip: "menu",
+    link: "link",
     lock: "lock",
-    "lock-open": "unlock",
     "log-out": "log-out",
     mail: "mail",
-    map: "map",
     "map-pin": "map-pin",
-    moon: "moon",
     "moon-star": "moon",
     pencil: "edit-2",
+    people: "users",
     plus: "plus",
-    search: "search",
     share: "share",
-    sparkles: "star",
-    star: "star",
     sun: "sun",
     "sun-moon": "smartphone",
+    sunrise: "sunrise",
     sunset: "sunset",
-    "triangle-alert": "alert-triangle",
-    users: "users",
-    wallet: "credit-card",
     xmark: "x",
-    zap: "zap",
   };
 
 type Props = {
   name: IconName;
   size?: number;
   color: string;
-  weight?: SymbolWeight;
 };
 
 // Icons only ever sit beside text or inside a labelled control, so screen
-// readers skip them; otherwise a symbol's own name ("Number sign") is read too.
+// readers skip them; otherwise a symbol's own name ("Envelope") is read too.
 const decorative = {
   accessibilityElementsHidden: true,
   importantForAccessibility: "no-hide-descendants",
 } as const;
 
-export function Icon({ name, size = 16, color, weight = "medium" }: Props) {
+export function Icon({ name, size = 16, color }: Props) {
   // Off iOS, SymbolView only ever shows the fallback, after loading a font it never draws.
   if (Platform.OS !== "ios")
     return (
@@ -137,7 +99,7 @@ export function Icon({ name, size = 16, color, weight = "medium" }: Props) {
       name={symbols[name]}
       size={size}
       tintColor={color}
-      weight={weight}
+      weight="medium"
       resizeMode="scaleAspectFit"
       {...decorative}
     />

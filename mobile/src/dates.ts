@@ -1,103 +1,22 @@
-import { partHours, type Interval, type Part } from "@circles/shared";
-import { useEffect, useState } from "react";
+import { localDate, type EventSummary } from "@circles/shared";
 
-export const partLabels: Record<Part, string> = {
-  morning: "Morning",
-  afternoon: "Afternoon",
-  evening: "Evening",
-};
+// The device's IANA timezone; Hermes can leave it empty.
+export const deviceTimezone = () =>
+  Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
-// An hour of the day, short: "8am", "12pm", "11pm".
-function formatHour(hour: number) {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    timeZone: "UTC",
-  })
-    .format(new Date(Date.UTC(2000, 0, 1, hour)))
-    .replace(/\s/g, "")
-    .toLowerCase();
-}
+// This device's calendar day, YYYY-MM-DD.
+export const todayKey = () => localDate(new Date(), deviceTimezone());
 
-// The hours a part of the day covers: "5pm–11pm".
-export function formatPartHours(part: Part) {
-  const [from, to] = partHours[part];
-  return `${formatHour(from)}–${formatHour(to)}`;
-}
-
-export function formatDate(date: string, weekday = false) {
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: weekday ? "short" : undefined,
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(date));
-}
-
-export function formatWindow(windowStart: string, windowEnd: string) {
-  return windowStart === windowEnd
-    ? formatDate(windowStart)
-    : `${formatDate(windowStart)} to ${formatDate(windowEnd)}`;
-}
-
-// Two YYYY-MM-DD days with their weekdays: "Sat, Nov 1 – Fri, Nov 7".
-export function formatRange(windowStart: string, windowEnd: string) {
-  return windowStart === windowEnd
-    ? formatDay(windowStart)
-    : `${formatDate(windowStart, true)} – ${formatDate(windowEnd, true)}`;
-}
-
-const dayFormat = (timeZone: string) =>
+// A YYYY-MM-DD day written out, "Thursday, Dec 11"; read in UTC so the day
+// never shifts.
+export const formatDay = (date: string) =>
   new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    timeZone,
-  });
-
-const timeFormat = (timeZone: string) =>
-  new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone,
-  });
-
-// The current time, refreshed each minute so time-dependent screens move on
-// without waiting for data to change.
-export function useNow(everyMs = 60_000) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), everyMs);
-    return () => clearInterval(id);
-  }, [everyMs]);
-  return now;
-}
-
-export function formatStart(start: string, timeZone: string) {
-  const at = new Date(start);
-  return `${dayFormat(timeZone).format(at)}, ${timeFormat(timeZone).format(at)}`;
-}
-
-export function formatInterval({ start, end }: Interval, timeZone: string) {
-  return `${formatStart(start, timeZone)} to ${timeFormat(timeZone).format(new Date(end))}`;
-}
-
-// Today as YYYY-MM-DD, on this device's calendar.
-export function todayKey() {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
-
-// A YYYY-MM-DD day, written out: "Thursday, Oct 8".
-export function formatDay(date: string) {
-  return new Intl.DateTimeFormat(undefined, {
     weekday: "long",
     month: "short",
     day: "numeric",
     timeZone: "UTC",
   }).format(new Date(date));
-}
 
-export function formatTime(start: string, timeZone: string) {
-  return timeFormat(timeZone).format(new Date(start));
-}
+// An event is past once its window has ended.
+export const isPast = (event: EventSummary, today: string) =>
+  event.windowEnd < today;

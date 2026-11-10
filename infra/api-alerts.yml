@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Circles API alerts on the circles-alerts topic - 5xx answers from the load balancer or the API, Bedrock spend by the hour and a monthly Bedrock budget
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Description: Who gets the budget emails (a budget cannot post to the topic without a topic policy for it)
+  AlertTopicArn:
+    Type: String
+    Default: arn:aws:sns:ca-central-1:682334556042:circles-alerts
+    Description: The circles-alerts stack's topic; the alarms post there
+  LoadBalancer:
+    Type: String
+    Default: app/ecs-express-gateway-alb-df4c466a/ac3db4c674a70190
+    Description: The LoadBalancer dimension of the Express gateway's ALB (its ARN after loadbalancer/); changes if the service is recreated
+  FiveHundredsPerFiveMinutes:
+    Type: Number
+    Default: 5
+    Description: 5xx answers in five minutes, from the API or the load balancer, that count as an outage
+  BedrockHourlyLimitUsd:
+    Type: Number
+    Default: 2
+    Description: Bedrock tokens in an hour, priced at the rates below, over this looks like a loop or abuse
+  BedrockMonthlyLimitUsd:
+    Type: Number
+    Default: 20
+  InputUsdPerMillionTokens:
+    Type: Number
+    Default: 1
+    Description: Claude Haiku 4.5 on Bedrock, list price
+  OutputUsdPerMillionTokens:
+    Type: Number
+    Default: 5
+    Description: Claude Haiku 4.5 on Bedrock, list price
+
+Resources:
+  # ECS has no 5xx metric of its own; the gateway's load balancer sees every answer: the API's (Target) and its own
+  # (ELB: 502/503/504 when no task answers).
+  ApiErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: circles-api-5xx
+      AlarmDescription: 5xx answers from the API or its load balancer in five minutes
+      Metrics:
+        - Id: target
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/ApplicationELB
+              MetricName: HTTPCode_Target_5XX_Count
+              Dimensions:
+                - Name: LoadBalancer
+                  Value: !Ref LoadBalancer
+            Period: 300
+            Stat: Sum
+        - Id: elb
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/ApplicationELB
+              MetricName: HTTPCode_ELB_5XX_Count
+              Dimensions:
+                - Name: LoadBalancer
+                  Value: !Ref LoadBalancer
+            Period: 300
+            Stat: Sum
+        - Id: errors
+          Expression: FILL(target, 0) + FILL(elb, 0)
+          Label: 5xx answers
+      Threshold: !Ref FiveHundredsPerFiveMinutes
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopicArn]
+
+  # Bedrock publishes the token counts without a ModelId dimension as well, so this covers whatever model is set.
+  # Billing lags by hours; this is the fast signal, the budget below the money one.
+  BedrockHourlySpendAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: circles-bedrock-hourly-spend
+      AlarmDescription: Bedrock tokens in an hour, priced at list, over the hourly limit
+      Metrics:
+        - Id: input
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/Bedrock
+              MetricName: InputTokenCount
+            Period: 3600
+            Stat: Sum
+        - Id: output
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/Bedrock
+              MetricName: OutputTokenCount
+            Period: 3600
+            Stat: Sum
+        - Id: usd
+          Expression: !Sub FILL(input, 0) * ${InputUsdPerMillionTokens} / 1000000 + FILL(output, 0) * ${OutputUsdPerMillionTokens} / 1000000
+          Label: Estimated USD
+      Threshold: !Ref BedrockHourlyLimitUsd
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 1
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopicArn]
+
+  BedrockBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: circles-bedrock
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: { Amount: !Ref BedrockMonthlyLimitUsd, Unit: USD }
+        CostFilters: { Service: [Amazon Bedrock] }
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]

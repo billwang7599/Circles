@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { AVATAR_COLORS, Email, type MemberSummary } from "@circles/shared";
+import { AVATAR_COLORS, Email } from "@circles/shared";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { FetchError, JwtBaseError } from "aws-jwt-verify/error";
 import type { Context, MiddlewareHandler } from "hono";
@@ -118,21 +118,4 @@ export function account(c: Context<AppEnv>): string {
   const id = c.get("accountId");
   if (!id) throw new HTTPException(401, { message: "Not signed in" });
   return id;
-}
-
-export async function memberOf(
-  c: Context<AppEnv>,
-  db: Db,
-  circleId: string,
-): Promise<MemberSummary> {
-  const accountId = account(c);
-  const [member] = z.uuid().safeParse(circleId).success
-    ? await db.query<MemberSummary>(
-        "select id, name from members where account_id = $1 and circle_id = $2",
-        [accountId, circleId],
-      )
-    : [];
-  if (!member)
-    throw new HTTPException(403, { message: "Not a member of this circle" });
-  return member;
 }

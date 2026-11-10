@@ -1,15 +1,12 @@
 import { StyleSheet, View } from "react-native";
-import { Icon, type IconName } from "./Icon";
 import { Text } from "./Text";
-import { space, useTheme } from "./theme";
+import { space } from "./theme";
 
-type Props = { icon: IconName; text: string };
+type Props = { text: string };
 
-export function Empty({ icon, text }: Props) {
-  const { colors } = useTheme();
+export function Empty({ text }: Props) {
   return (
     <View style={styles.empty}>
-      <Icon name={icon} size={32} color={colors.textMuted} />
       <Text color="textMuted" style={styles.text}>
         {text}
       </Text>

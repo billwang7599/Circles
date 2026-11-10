@@ -20,6 +20,7 @@ type Props = {
   style?: StyleProp<ViewStyle>;
 };
 
+// A full pill: ink for the one primary action, chalk for the rest.
 export function Button({
   title,
   onPress,
@@ -33,14 +34,14 @@ export function Button({
   const { colors } = useTheme();
   const background = {
     primary: colors.primary,
-    secondary: "transparent",
-    destructive: colors.danger,
+    secondary: colors.card,
+    destructive: colors.card,
     ghost: "transparent",
   }[variant];
   const foreground = {
     primary: colors.primaryForeground,
     secondary: colors.foreground,
-    destructive: colors.dangerForeground,
+    destructive: colors.danger,
     ghost: colors.foreground,
   }[variant];
   const small = buttonSize === "small";
@@ -68,7 +69,7 @@ export function Button({
       ) : icon ? (
         <Icon name={icon} size={16} color={foreground} />
       ) : null}
-      <Text variant="label" style={[styles.title, { color: foreground }]}>
+      <Text variant="button" style={[styles.title, { color: foreground }]}>
         {title}
       </Text>
     </Pressable>
@@ -81,9 +82,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: space.sm,
-    borderWidth: 1.25,
+    borderWidth: 1.2,
     borderRadius: radius.full,
-    paddingHorizontal: space.lg,
+    paddingHorizontal: space.xl,
   },
   default: { minHeight: size.control },
   small: { minHeight: size.small, minWidth: 72, paddingHorizontal: space.lg },

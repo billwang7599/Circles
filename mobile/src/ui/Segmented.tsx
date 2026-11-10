@@ -45,7 +45,7 @@ export function Segmented<T extends string>({
             {option.icon ? (
               <Icon name={option.icon} size={16} color={color} />
             ) : null}
-            <Text variant="fieldLabel" numberOfLines={1} style={{ color }}>
+            <Text variant="button" numberOfLines={1} style={{ color }}>
               {option.label}
             </Text>
           </Pressable>
@@ -58,7 +58,7 @@ export function Segmented<T extends string>({
 const styles = StyleSheet.create({
   group: {
     flexDirection: "row",
-    borderWidth: 1,
+    borderWidth: 1.2,
     borderRadius: radius.full,
     overflow: "hidden",
   },

@@ -6,11 +6,12 @@ import { z } from "zod";
 import { createApp } from "./app.ts";
 import { devVerifier, verifierFor } from "./auth.ts";
 import { pgDb } from "./db.ts";
+import { settlePendingDays } from "./itineraries.ts";
 import { log } from "./log.ts";
 import { migrate } from "./migrate.ts";
-import { fakePlaces, fakeRanker } from "./plan/fakes.ts";
-import { bedrockRanker } from "./plan/model.ts";
-import { googlePlaces } from "./plan/places.ts";
+import { bedrockDates, fakeDates } from "./plan/dates.ts";
+import { bedrockItineraries, fakeItineraries } from "./plan/itinerary.ts";
+import { bedrockSetup, fakeSetup } from "./plan/setup.ts";
 
 const envFile = fileURLToPath(new URL("../.env", import.meta.url));
 if (existsSync(envFile)) process.loadEnvFile(envFile);
@@ -18,12 +19,12 @@ if (existsSync(envFile)) process.loadEnvFile(envFile);
 const env = z
   .object({
     PORT: z.coerce.number().int().positive().default(3001),
+    PUBLIC_URL: z.string().default(""),
+    APP_STORE_URL: z.string().default(""),
     DATABASE_URL: z.string().min(1),
     NODE_ENV: z.string().default("development"),
     AWS_REGION: z.string().default("ca-central-1"),
     BEDROCK_MODEL_ID: z.string().default(""),
-    GOOGLE_PLACES_API_KEY: z.string().default(""),
-    GOOGLE_PLACES_MAX_REQUESTS: z.coerce.number().int().positive().default(100),
     COGNITO_USER_POOL_ID: z.string().default(""),
     COGNITO_CLIENT_ID: z.string().default(""),
   })
@@ -31,30 +32,40 @@ const env = z
 
 const verifier = verifierFor(env);
 
-const ranker = env.BEDROCK_MODEL_ID
-  ? bedrockRanker(env.AWS_REGION, env.BEDROCK_MODEL_ID)
-  : fakeRanker();
-const places = env.GOOGLE_PLACES_API_KEY
-  ? googlePlaces(env.GOOGLE_PLACES_API_KEY, env.GOOGLE_PLACES_MAX_REQUESTS)
-  : fakePlaces();
+// One model for every feature, on Bedrock through the default credential
+// chain when one is named; the fakes otherwise.
+const models = env.BEDROCK_MODEL_ID
+  ? {
+      setup: bedrockSetup(env.AWS_REGION, env.BEDROCK_MODEL_ID),
+      dates: bedrockDates(env.AWS_REGION, env.BEDROCK_MODEL_ID),
+      itineraries: bedrockItineraries(env.AWS_REGION, env.BEDROCK_MODEL_ID),
+    }
+  : {
+      setup: fakeSetup(),
+      dates: fakeDates(),
+      itineraries: fakeItineraries(),
+    };
 
 const pool = new Pool({ connectionString: env.DATABASE_URL });
 const client = await pool.connect();
 await migrate(pgDb(client));
+await settlePendingDays(pgDb(client));
 client.release();
 
 const app = createApp(pgDb(pool), {
   verifier,
   cors: env.NODE_ENV !== "production",
-  ranker,
-  places,
+  ...models,
+  invites: {
+    publicUrl: env.PUBLIC_URL || undefined,
+    appStoreUrl: env.APP_STORE_URL || undefined,
+  },
 });
 serve({ fetch: app.fetch, port: env.PORT }, () =>
   log({
     env: env.NODE_ENV,
     port: env.PORT,
-    ranker: ranker.model,
-    places: env.GOOGLE_PLACES_API_KEY ? "google" : "fake",
+    model: models.setup.model,
     auth: verifier === devVerifier ? "dev" : "cognito",
   }),
 );

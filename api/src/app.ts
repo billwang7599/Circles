@@ -2,23 +2,24 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { authenticate, type AppEnv, type Verifier } from "./auth.ts";
-import { circles } from "./circles.ts";
 import type { Db } from "./db.ts";
+import { events } from "./events.ts";
+import { inviteClaims, invitePages, type InviteOptions } from "./invites.ts";
+import { itineraries } from "./itineraries.ts";
 import { log } from "./log.ts";
-import { options } from "./options.ts";
-import { fakePlaces, fakeRanker } from "./plan/fakes.ts";
-import type { PlacesClient } from "./plan/places.ts";
-import type { Ranker } from "./plan/rank.ts";
-import { plans } from "./plans.ts";
-import { votes } from "./votes.ts";
+import { fakeDates, type DatesModel } from "./plan/dates.ts";
+import { fakeItineraries, type ItineraryModel } from "./plan/itinerary.ts";
+import { fakeSetup, type SetupModel } from "./plan/setup.ts";
 
 export function createApp(
   db: Db,
   deps: {
     verifier: Verifier;
     cors?: boolean;
-    ranker?: Ranker;
-    places?: PlacesClient;
+    setup?: SetupModel;
+    dates?: DatesModel;
+    itineraries?: ItineraryModel;
+    invites?: InviteOptions;
   },
 ) {
   const app = new Hono<AppEnv>();
@@ -48,15 +49,21 @@ export function createApp(
     await db.query("select 1");
     return c.json({ ok: true });
   });
+  // The invite pages need no token either: the link is the key.
+  app.route("/", invitePages(db, deps.invites));
   // After /api/health, so the health check needs no token.
   app.use("/api/*", authenticate(db, deps.verifier));
-  app.route("/api", circles(db));
-  app.route("/api", plans(db));
   app.route(
     "/api",
-    options(db, deps.ranker ?? fakeRanker(), deps.places ?? fakePlaces()),
+    events(
+      db,
+      deps.setup ?? fakeSetup(),
+      deps.dates ?? fakeDates(),
+      deps.invites,
+    ),
   );
-  app.route("/api", votes(db));
+  app.route("/api", inviteClaims(db, deps.invites));
+  app.route("/api", itineraries(db, deps.itineraries ?? fakeItineraries()));
 
   return app;
 }

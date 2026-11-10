@@ -1,30 +1,20 @@
 import {
-  areaById,
-  Part,
-  windowFor,
-  type MembershipResponse,
-  type PlanView,
-  type PreferenceId,
-  type RegistrationInput,
-  type When,
+  presetWindow,
+  type Answers,
+  type CreateEvent,
+  type EventView,
+  type Question,
 } from "@circles/shared";
 import { expect } from "vitest";
 import { createApp } from "./app.ts";
 import { devVerifier } from "./auth.ts";
 import { testDb } from "./testDb.ts";
-
-export const attending = (
-  budgetCents = 3000,
-  preference: PreferenceId = "ramen",
-): RegistrationInput => ({
-  attending: true,
-  budgetCents,
-  busy: [],
-  preferences: [preference],
-});
+import { skiTrip } from "./testModel.ts";
 
 let accounts = 0;
 export const newToken = () => `dev:person${++accounts}@example.com`;
+
+export const today = () => new Date().toISOString().slice(0, 10);
 
 export async function testApp(
   deps: Partial<Parameters<typeof createApp>[1]> = {},
@@ -49,86 +39,134 @@ export async function testApp(
     return token;
   }
 
-  async function membership(
-    path: string,
-    data: unknown,
-    displayName: string,
-    token?: string,
-  ) {
-    const signedUp = await named(displayName, token);
-    const res = await call("POST", path, signedUp, data);
-    expect(res.status).toBe(201);
-    return {
-      ...((await res.json()) as MembershipResponse),
-      token: signedUp,
-    };
-  }
-
-  const createCircle = (name: string, memberName: string) =>
-    membership("/api/circles", { name }, memberName);
-
-  async function circleWith(...names: string[]) {
-    const [first, ...rest] = names;
-    const created = await createCircle("Dinner club", first);
-    const tokens = [created.token];
-    for (const name of rest) {
-      const joined = await membership(
-        "/api/circles/join",
-        { code: created.circle.joinCode },
-        name,
-      );
-      tokens.push(joined.token);
-    }
-    return { circleId: created.circle.id, tokens };
-  }
-
-  async function createPlan(
-    circleId: string,
+  async function createEvent(
     token: string,
-    when: When = "week",
-    parts: Part[] = Part.options,
-  ) {
-    const res = await call("POST", `/api/circles/${circleId}/plans`, token, {
-      title: "Ramen",
-      areaId: "uw",
-      ...windowFor(when, areaById("uw").timezone, new Date()),
-      parts,
+    overrides: Partial<CreateEvent> = {},
+  ): Promise<EventView> {
+    const res = await call("POST", "/api/events", token, {
+      description: skiTrip,
+      ...presetWindow("nextMonth", today()),
+      ...overrides,
     });
     expect(res.status).toBe(201);
-    return ((await res.json()) as PlanView).plan;
+    return (await res.json()) as EventView;
   }
 
-  async function register(
-    path: string,
-    token: string,
-    input: RegistrationInput,
+  const accountId = async (token: string) =>
+    (
+      await db.query<{ id: string }>("select id from accounts where sub = $1", [
+        token,
+      ])
+    )[0]!.id;
+
+  // An event written to the table as is, for a fixed window and question ids.
+  async function insertEvent(
+    organizerId: string,
+    event: {
+      slug: string;
+      questions: Question[];
+      windowStart: string;
+      windowEnd: string;
+    },
   ) {
-    const res = await call("PUT", `${path}/registration`, token, input);
-    expect(res.status).toBe(200);
-    return (await res.json()) as PlanView;
+    const [row] = await db.query<{ id: string }>(
+      `insert into events (organizer_id, slug, title, description, window_start, window_end, questions)
+       values ($1, $2, $3, $4, $5, $6, $7::jsonb) returning id`,
+      [
+        organizerId,
+        event.slug,
+        "Ski trip",
+        skiTrip,
+        event.windowStart,
+        event.windowEnd,
+        JSON.stringify(event.questions),
+      ],
+    );
+    return row!.id;
   }
 
-  async function planWithOptions(circleId: string, tokens: string[]) {
-    const plan = await createPlan(circleId, tokens[0]);
-    const path = `/api/circles/${circleId}/plans/${plan.id}`;
-    for (const [i, token] of tokens.entries())
-      await register(path, token, attending(3000, i % 2 ? "sushi" : "ramen"));
-    const res = await call("POST", `${path}/options`, tokens[0]);
-    expect(res.status).toBe(201);
-    return { path, view: (await res.json()) as PlanView };
+  // What the invite page or a claim would write, without going through them.
+  async function respond(
+    eventId: string,
+    response: {
+      name: string;
+      attending: boolean;
+      answers?: Answers | null;
+      accountId?: string | null;
+      tokenHash?: string;
+    },
+  ) {
+    await db.query(
+      `insert into responses (event_id, account_id, token_hash, name, attending, answers)
+       values ($1, $2, $3, $4, $5, $6::jsonb)`,
+      [
+        eventId,
+        response.accountId ?? null,
+        response.tokenHash ?? null,
+        response.name,
+        response.attending,
+        response.answers ? JSON.stringify(response.answers) : null,
+      ],
+    );
   }
+
+  async function version(eventId: string) {
+    const [row] = await db.query<{ version: number }>(
+      "select version from events where id = $1",
+      [eventId],
+    );
+    return row!.version;
+  }
+
+  // The invite page, as someone in the group chat sees it.
+  const page = (slug: string, cookie?: string, query = "") =>
+    app.request(`/i/${slug}${query}`, { headers: cookie ? { cookie } : {} });
+
+  // The form as a browser sends it back.
+  function send(
+    slug: string,
+    fields: Record<string, string | string[]>,
+    cookie?: string,
+    headers: Record<string, string> = {},
+    to = app,
+  ) {
+    const params = new URLSearchParams();
+    for (const [name, value] of Object.entries(fields))
+      for (const v of [value].flat()) params.append(name, v);
+    return to.request(`/i/${slug}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        ...(cookie ? { cookie } : {}),
+        ...headers,
+      },
+      body: params.toString(),
+    });
+  }
+
+  // Only the RSVP sets the cookie; answers just send the page back to itself.
+  const cookieOf = (res: Response) => {
+    expect(res.status).toBe(303);
+    const cookie = res.headers.get("set-cookie")!.split(";")[0]!;
+    expect(cookie.startsWith("response_")).toBe(true);
+    return cookie;
+  };
+  const tokenOf = (cookie: string) => decodeURIComponent(cookie.split("=")[1]!);
 
   return {
     app,
     db,
     call,
     named,
-    membership,
-    createCircle,
-    circleWith,
-    createPlan,
-    register,
-    planWithOptions,
+    createEvent,
+    accountId,
+    insertEvent,
+    respond,
+    version,
+    page,
+    send,
+    cookieOf,
+    tokenOf,
   };
 }
 

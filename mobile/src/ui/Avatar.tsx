@@ -2,7 +2,7 @@ import type { AvatarColor } from "@circles/shared";
 import { StyleSheet, Text as RNText, View } from "react-native";
 import { avatarColors, font, radius, useTheme } from "./theme";
 
-export const avatarSize = 44;
+const avatarSize = 44;
 
 type Props = {
   name: string;

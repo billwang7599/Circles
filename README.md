@@ -1,65 +1,45 @@
 # Circles
 
-A group planning tool built around **persistent social circles**. Capstone project, **work in progress**.
+An AI-native app for planning full-day to multi-day group plans: ski trips, weekend getaways, day trips. Capstone project, **work in progress**.
 
 ## The Problem
 
-Planning with friends means juggling separate apps for chat, scheduling, ideas, invites, and expenses. Each app is built around a single event, so none of them remember who the group is or what it did last time.
-
-Deciding what to do means weighing four things at once:
-
-- **Who is free**
-- **What everyone can spend**
-- **What people want to do**
-- **What the group has already done**
-
-These signals live in four different apps, so groups reconcile them by hand in chat threads.
+Friends plan in group chats. Someone floats a trip, dates go back and forth, budgets go unsaid, and the plan stalls because nobody can hold everyone's constraints in their head at once.
 
 ## The Idea
 
-Users create lasting circles (e.g. "Roommates", "SE Friends") that keep their own plans, saved ideas, past events, and photos over time. Members:
+Only the organizer needs the app. They describe the plan in plain language ("Ski trip with Ben and Chloe, somewhere we can drive to"), pick a rough date range, and Circles AI sets up the event page with the questions that fit that event: dates, budget, resort options, anything else. The organizer edits the questions and copies one invite link into the group chat.
 
-1. Mark their availability
-2. Add their budget (kept private, but it still shapes the results)
-3. Set preferences
-4. Vote on options
+Invitees tap the link and answer in about a minute, with no app and no account: whether they're in, the dates they're free, a budget range, their picks. Budgets stay private; only a group range is ever used.
 
-The group then locks the winning plan in as an event. The event page is the hub for the itinerary, bookings, shared tasks, and eventually photos and expenses.
+As answers come in, Circles turns them into itinerary options for the group. Free dates and party size are applied in code before the model sees anything; the group's budget is applied in code afterwards, against the model's rough cost estimate, and never reaches the prompt. The AI only writes and ranks options, and the organizer still chooses.
 
-**First market:** university students, who plan with the same few groups almost every week.
-
-## AI Planner
-
-The AI reads the group's shared data (free times, votes, spending limits, history) and proposes two or three feasible options, each with a short summary. The group still votes and confirms. The AI never decides alone.
+**First market:** university students, who plan with the same few groups every term.
 
 ## Scope
 
 **Capstone prototype**
 
-- Persistent groups
-- Plans with availability input
-- Group voting
-- AI planner
-- Event lock-in
-- Shared expense splitting
-
-The prototype will be tested with student groups on campus.
+- Describe an event and pick dates in plain language
+- AI-chosen, editable questions
+- Invite link with a rich preview in Messages
+- Answering from the web, no account
+- Itinerary options from the group's answers
+- Install prompt and account claim for invitees
 
 **Future work**
 
-- Full event hub (itineraries, bookings, reminders)
-- Calendar sync
-- Long-term group memory that improves recommendations
+- Grounding itinerary stops in a places API
+- Calendar export and sharing an itinerary as a file
+- Expense splitting after the trip
 
 ## Repo Layout
 
-| Folder    | Purpose                                                           |
-| --------- | ----------------------------------------------------------------- |
-| `mobile/` | Expo app                                                          |
-| `api/`    | Backend servers                                                   |
-| `shared/` | Schemas and time helpers used by the app, the API and the planner |
-| `ai/`     | AI planner pipeline                                               |
-| `web/`    | Web interface                                                     |
+| Folder    | Purpose                                                       |
+| --------- | ------------------------------------------------------------- |
+| `mobile/` | Expo app for organizers                                       |
+| `api/`    | Hono API on Postgres: events, the invite page, the AI planner |
+| `shared/` | Schemas and time helpers used by the app and the API          |
 
 Setup and workflow: [DEVELOPMENT.md](DEVELOPMENT.md).
 

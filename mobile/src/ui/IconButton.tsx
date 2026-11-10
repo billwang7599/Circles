@@ -9,6 +9,7 @@ type Props = {
   iconSize?: number;
 };
 
+// A bare glyph in a 44 pt hit area.
 export function IconButton({ icon, label, onPress, iconSize = 20 }: Props) {
   const { colors } = useTheme();
   return (

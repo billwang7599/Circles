@@ -1,7 +1,7 @@
 import { Appearance } from "react-native";
 import { createChoice } from "./store";
 
-export const APPEARANCES = ["system", "light", "dark"] as const;
+const APPEARANCES = ["system", "light", "dark"] as const;
 export type AppearanceChoice = (typeof APPEARANCES)[number];
 
 const store = createChoice("circles.appearance", APPEARANCES, "system");

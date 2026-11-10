@@ -3,7 +3,7 @@ import expo from "eslint-config-expo/flat.js";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  { ignores: ["mobile/dist/", "mobile/.expo/", "web/dist/"] },
+  { ignores: ["mobile/dist/", "mobile/.expo/"] },
   tseslint.configs.recommended,
   {
     files: ["mobile/**"],

@@ -1,46 +1,57 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { StyleSheet, TextInput, type TextInputProps, View } from "react-native";
-import { Icon, type IconName } from "./Icon";
 import { Text } from "./Text";
-import { font, radius, size, space, useTheme } from "./theme";
+import { radius, size, space, typeScale, useTheme } from "./theme";
 
 type Props = TextInputProps & {
-  label: string;
-  icon?: IconName;
+  // Left out when the placeholder says what the field is.
+  label?: string;
   // A unit shown inside the box ahead of the value, such as "$".
   prefix?: string;
   error?: string;
+  // Sits inside the box under a multiline value.
+  children?: ReactNode;
 };
 
-export function Field({ label, icon, prefix, error, style, ...input }: Props) {
+export function Field({
+  label,
+  prefix,
+  error,
+  style,
+  children,
+  ...input
+}: Props) {
   const { colors } = useTheme();
+  const tall = input.multiline === true;
   return (
     <View style={styles.field}>
-      <View style={styles.label}>
-        <Text variant="fieldLabel">{label}</Text>
-        {icon ? <Icon name={icon} size={16} color={colors.textMuted} /> : null}
-      </View>
+      {label ? <Text variant="label">{label}</Text> : null}
       <View
         style={[
           styles.box,
+          tall && styles.tallBox,
           {
-            backgroundColor: colors.control,
+            backgroundColor: colors.card,
             borderColor: error ? colors.danger : colors.input,
           },
         ]}
       >
-        {prefix ? (
-          <Text color="textMuted" style={styles.prefix}>
-            {prefix}
-          </Text>
-        ) : null}
-        <TextInput
-          maxFontSizeMultiplier={1.5}
-          accessibilityLabel={label}
-          {...input}
-          placeholderTextColor={colors.textMuted}
-          style={[styles.input, { color: colors.foreground }, style]}
-        />
+        <View style={styles.value}>
+          {prefix ? <Text color="textMuted">{prefix}</Text> : null}
+          <TextInput
+            maxFontSizeMultiplier={1.5}
+            accessibilityLabel={label ?? input.placeholder}
+            {...input}
+            placeholderTextColor={colors.textMuted}
+            style={[
+              styles.input,
+              tall && styles.tallInput,
+              { color: colors.foreground },
+              style,
+            ]}
+          />
+        </View>
+        {children}
       </View>
       {error ? (
         <Text variant="caption" color="danger">
@@ -63,21 +74,13 @@ export function useIssues() {
 
 const styles = StyleSheet.create({
   field: { gap: space.inline },
-  label: { flexDirection: "row", alignItems: "center", gap: space.inline },
   box: {
-    minHeight: size.control,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.xs,
-    borderRadius: radius.full,
+    borderRadius: radius.card,
     borderWidth: 1,
     paddingHorizontal: space.lg,
   },
-  prefix: { fontSize: 16 },
-  input: {
-    flex: 1,
-    minHeight: size.control,
-    fontFamily: font.regular,
-    fontSize: 16,
-  },
+  tallBox: { paddingTop: space.md, paddingBottom: space.md, gap: space.md },
+  value: { flexDirection: "row", alignItems: "center", gap: space.xs },
+  input: { flex: 1, minHeight: size.control, ...typeScale.input },
+  tallInput: { minHeight: 72, textAlignVertical: "top" },
 });

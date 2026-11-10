@@ -2,9 +2,21 @@ import { Children, Fragment } from "react";
 import { StyleSheet, View, type ViewProps } from "react-native";
 import { radius, space, useTheme } from "./theme";
 
-type Props = ViewProps & { list?: boolean };
+type Props = ViewProps & {
+  // Rows with a hairline between each pair, inset from the left.
+  list?: boolean;
+  // The quiet-surface version, for what sits beside the chalk cards.
+  panel?: boolean;
+};
 
-export function Card({ list = false, style, children, ...rest }: Props) {
+// Chalk on the paper, with no border: depth is tonal.
+export function Card({
+  list = false,
+  panel = false,
+  style,
+  children,
+  ...rest
+}: Props) {
   const { colors } = useTheme();
   const rows = list ? Children.toArray(children) : null;
   return (
@@ -12,7 +24,7 @@ export function Card({ list = false, style, children, ...rest }: Props) {
       {...rest}
       style={[
         list ? styles.list : styles.card,
-        { backgroundColor: colors.card, borderColor: colors.border },
+        { backgroundColor: panel ? colors.surface : colors.card },
         style,
       ]}
     >
@@ -34,11 +46,10 @@ export function Card({ list = false, style, children, ...rest }: Props) {
 
 const styles = StyleSheet.create({
   card: {
-    borderWidth: 1,
     borderRadius: radius.panel,
     padding: space.gutter,
     gap: space.lg,
   },
-  list: { borderWidth: 1, borderRadius: radius.list, overflow: "hidden" },
+  list: { borderRadius: radius.panel, overflow: "hidden" },
   divider: { height: 1, marginLeft: space.lg },
 });
