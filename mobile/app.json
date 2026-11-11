@@ -10,9 +10,6 @@
     "ios": {
       "bundleIdentifier": "ca.circles.app",
       "icon": "./assets/images/icon.png",
-      "associatedDomains": [
-        "applinks:ci-889f2eab7cae4e068cc6b522abc6fa1c.ecs.ca-central-1.on.aws"
-      ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }

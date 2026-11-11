@@ -118,10 +118,12 @@ The invite page's Open in the app link is `circles://invite?slug=<slug>&g=<token
 with the app it opens the app, on one without it Safari says the address is invalid. It cannot be a Universal Link,
 because Apple keeps a link tapped on a page of the same site in Safari. The app also opens
 `https://<PUBLIC_URL host>/i/<slug>?g=<token>` as a Universal Link when such a link arrives from Messages, Mail or
-another app. Two things make that work: the API serves `/.well-known/apple-app-site-association` naming the app,
-`<APPLE_TEAM_ID>.ca.circles.app`, once `APPLE_TEAM_ID` (the team's ID from App Store Connect, Membership details) is set
-on the ECS service, and the app's `ios.associatedDomains` in `mobile/app.json` names the API host. The entitlement is
-baked into the build, so a new host or team needs a new EAS build, and iOS reads the association file when it installs
-the app and about weekly after. Only links carrying a `g` open the app; the shared invite link stays a web page, since
+another app. Three things make that work, none of them in place yet: the API serves
+`/.well-known/apple-app-site-association` naming the app, `<APPLE_TEAM_ID>.ca.circles.app`, once `APPLE_TEAM_ID` (the
+team's ID from App Store Connect, Membership details) is set on the ECS service; the `ca.circles.app` App ID has the
+Associated Domains capability turned on in the Apple Developer portal, or EAS cannot sign the build; and
+`ios.associatedDomains` in `mobile/app.json` lists `applinks:<PUBLIC_URL host>`. The entitlement is baked into the
+build, so a new host or team needs a new EAS build, and iOS reads the association file when it installs the app and
+about weekly after. Only links carrying a `g` open the app; the shared invite link stays a web page, since
 the app has no screen for it. The organizer's Add my answers link opens in Safari even from the app, as Apple sends an
 app's own Universal Links to the browser.
