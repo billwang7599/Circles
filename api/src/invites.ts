@@ -377,7 +377,7 @@ const rightIcon = icon('<path d="M9.5 6l6 6-6 6"/>', 2);
 
 const css = raw(`
 *,*::before,*::after{box-sizing:border-box}
-:root{color-scheme:light;--fg:#0a0a0a;--muted:#737373;--sec:#f5f5f5;--line:#e5e5e5;--pri:#171717;--pri-fg:#fafafa;--bg:#fff;--err:#b42318;--ease:cubic-bezier(.2,.8,.2,1)}
+:root{color-scheme:light;--fg:#0a0a0a;--muted:#6b6b6b;--sec:#f5f5f5;--line:#e5e5e5;--pri:#171717;--pri-fg:#fafafa;--bg:#fff;--err:#b42318;--ease:cubic-bezier(.2,.8,.2,1)}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/22px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;accent-color:var(--fg)}
 ::selection{background:var(--fg);color:var(--bg)}
@@ -396,11 +396,11 @@ h1{font-size:34px;line-height:40px;font-weight:600;letter-spacing:-.8px;text-wra
 .hl svg{color:var(--muted)}
 .lbl{display:block;font-weight:600;line-height:20px}
 .hint{color:var(--muted);margin-top:4px}
-.fld{display:block;width:100%;min-height:44px;padding:11px 16px;background:var(--sec);border:1px solid transparent;border-radius:12px;font:inherit;color:inherit;caret-color:var(--fg);-webkit-appearance:none;appearance:none}
+.fld{display:block;width:100%;min-height:44px;padding:11px 16px;background:var(--sec);border:1px solid transparent;border-radius:12px;font:inherit;font-size:17px;line-height:22px;color:inherit;caret-color:var(--fg);-webkit-appearance:none;appearance:none}
 .fld::placeholder{color:var(--muted);opacity:1}
 .fld:focus-visible{outline:none;border-color:var(--fg)}
 .fld[aria-invalid=true]{border-color:var(--err)}
-.ta{min-height:96px;resize:vertical}
+.ta{min-height:66px;resize:vertical;margin-top:12px}
 .btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;min-height:44px;padding:0 20px;border-radius:999px;border:1px solid var(--fg);background:var(--bg);color:var(--fg);font:inherit;font-weight:500;text-decoration:none;cursor:pointer;transition:transform .15s var(--ease)}
 .btn.primary{background:var(--pri);border-color:var(--pri);color:var(--pri-fg)}
 .btn:active{transform:scale(.98)}
@@ -409,14 +409,14 @@ h1{font-size:34px;line-height:40px;font-weight:600;letter-spacing:-.8px;text-wra
 .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .rsvp{display:grid;gap:10px;margin-top:28px}
 .rsvp .hl{margin-top:18px}
-.note{color:var(--muted);font-size:13px;line-height:18px;margin-top:4px}
+.rsvp>.hl:first-child{margin-top:0}
 .err{color:var(--err);font-size:13px;line-height:18px;margin-top:-2px}
 .rule{border:0;border-top:1px solid var(--line);margin:28px 0 0}
 .q{margin-top:28px}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .chip{position:relative}
 .chip input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
-.chip span{display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:var(--bg);font-weight:500;font-size:14px}
+.chip span{display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:var(--bg);font-weight:500}
 .chip input:checked+span{background:var(--pri);color:var(--pri-fg);border-color:var(--pri)}
 .chip input:focus-visible+span{outline:2px solid var(--fg);outline-offset:2px}
 .chips+.fld{margin-top:12px}
@@ -427,7 +427,7 @@ h1{font-size:34px;line-height:40px;font-weight:600;letter-spacing:-.8px;text-wra
 .rt{flex:1;min-width:0;display:grid}
 .rl{font-weight:500}
 .rd{color:var(--muted);font-size:13px;line-height:18px}
-.rc{flex:none;width:22px;height:22px;border-radius:50%;background:var(--bg);border:1px solid var(--line);display:grid;place-items:center;color:var(--pri-fg)}
+.rc{flex:none;width:22px;height:22px;border-radius:50%;background:var(--bg);border:1px solid var(--muted);display:grid;place-items:center;color:var(--pri-fg)}
 .rc svg{width:12px;height:12px;opacity:0}
 .row input:checked~.rc{background:var(--pri);border-color:var(--pri)}
 .row input:checked~.rc svg{opacity:1}
@@ -439,7 +439,7 @@ h1{font-size:34px;line-height:40px;font-weight:600;letter-spacing:-.8px;text-wra
 .mn{font-weight:600;font-size:16px;letter-spacing:-.3px}
 .pager{display:flex;gap:6px}
 .pager[hidden]{display:none}
-.pager button{width:28px;height:28px;padding:0;border-radius:50%;border:1px solid var(--line);background:var(--bg);color:var(--fg);display:grid;place-items:center;cursor:pointer}
+.pager button{width:40px;height:40px;padding:0;border-radius:50%;border:1px solid var(--line);background:var(--bg);color:var(--fg);display:grid;place-items:center;cursor:pointer}
 .pager button:disabled{opacity:.35;cursor:default}
 .pager svg{width:14px;height:14px}
 .wk,.grid{display:grid;grid-template-columns:repeat(7,1fr)}
@@ -460,7 +460,7 @@ h1{font-size:34px;line-height:40px;font-weight:600;letter-spacing:-.8px;text-wra
 }
 .ranges{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .ranges[hidden]{display:none}
-.rchip{display:inline-flex;align-items:center;gap:8px;min-height:32px;padding:0 10px 0 12px;border:0;border-radius:999px;background:var(--pri);color:var(--pri-fg);font:inherit;font-size:13px;font-weight:500;cursor:pointer}
+.rchip{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 12px 0 14px;border:0;border-radius:999px;background:var(--pri);color:var(--pri-fg);font:inherit;font-weight:500;cursor:pointer}
 .send{margin-top:28px}
 .done{text-align:center;padding-top:24px}
 .badge{width:64px;height:64px;border-radius:50%;background:var(--pri);color:var(--pri-fg);display:grid;place-items:center;margin:0 auto 20px}
@@ -472,14 +472,13 @@ h1{font-size:34px;line-height:40px;font-weight:600;letter-spacing:-.8px;text-wra
 .summary dd{margin:0;text-align:right}
 .links{display:flex;justify-content:center;flex-wrap:wrap;gap:6px 20px;margin-top:16px}
 .links form{display:contents}
-.link{padding:0;border:0;background:none;font:inherit;font-weight:500;color:var(--fg);text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line);cursor:pointer}
+.link{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;border:0;background:none;font:inherit;font-weight:500;color:var(--fg);text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line);cursor:pointer}
 .app{margin-top:40px;padding:20px;border:1px solid var(--line);border-radius:20px}
 .app-mark{width:44px;height:44px;border-radius:12px;background:var(--pri);color:var(--pri-fg);display:grid;place-items:center;margin-bottom:16px}
 .app-mark svg{width:24px;height:24px}
 .app h2{font-size:20px;line-height:26px;font-weight:600;letter-spacing:-.4px}
-.app p{color:var(--muted);margin:6px 0 16px}
+.app h2{margin-bottom:16px}
 .quiet{display:block;text-align:center;color:var(--muted);text-decoration:none;font-weight:500;margin-top:12px;min-height:44px;line-height:44px}
-.plain{padding-top:40px}
 .plain p{color:var(--muted);margin-top:8px}
 `);
 
@@ -531,7 +530,7 @@ function skeleton(
         />
         <meta name="robots" content="noindex" />
         <meta name="theme-color" content="#ffffff" />
-        <title>${title} · Circles</title>
+        <title>${title} – Circles</title>
         ${head}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -565,7 +564,7 @@ function page(
   const when = approxRange(event.windowStart, event.windowEnd);
   const head = html`<meta property="og:type" content="website" />
     <meta property="og:site_name" content="Circles" />
-    <meta property="og:title" content="${event.title} · ${when}" />
+    <meta property="og:title" content="${event.title}, ${when}" />
     <meta
       property="og:description"
       content="Can you make it? Answer in a minute, no app needed."
@@ -608,23 +607,15 @@ function header(event: EventRow) {
     <h1>${event.title}</h1>
     <p class="when">
       ${calendarIcon}<span
-        >${approxRange(event.windowStart, event.windowEnd)}</span
+        >${approxRange(event.windowStart, event.windowEnd, true)}</span
       >
     </p>
   </header>`;
 }
 
-// The name and the two answers: the whole page for someone new, the top of
-// the questions page for someone who is in.
-function rsvpForm(
-  event: EventRow,
-  response: ResponseRow | undefined,
-  name: string,
-  issues: Issues,
-) {
-  const isIn = response?.attending === true;
-  return html`<form method="post" action="/i/${event.slug}" class="rsvp">
-    <label class="lbl" for="name">Your name</label>
+// The name field, on the RSVP page and at the top of the questions page.
+function nameField(name: string, issues: Issues) {
+  return html`<label class="lbl" for="name">Your name</label>
     <input
       class="fld"
       id="name"
@@ -638,8 +629,13 @@ function rsvpForm(
       required
       ${issues.name ? raw('aria-invalid="true" aria-describedby="name-err"') : ""}
     />
-    ${error(issues.name, "name-err")}
-    <h2 class="hl" id="attending-lbl">Can you make it?</h2>
+    ${error(issues.name, "name-err")}`;
+}
+
+// The name and the two answers: the whole page for someone new.
+function rsvpForm(event: EventRow, name: string, issues: Issues) {
+  return html`<form method="post" action="/i/${event.slug}" class="rsvp">
+    ${nameField(name, issues)}
     <button
       type="submit"
       name="attending"
@@ -648,28 +644,16 @@ function rsvpForm(
       tabindex="-1"
       aria-hidden="true"
     ></button>
+    <h2 class="hl" id="attending-lbl">Can you make it?</h2>
     <div class="pair" role="group" aria-labelledby="attending-lbl">
       <button class="btn" type="submit" name="attending" value="out">
         Can't make it
       </button>
-      <button
-        class="btn primary"
-        type="submit"
-        name="attending"
-        value="in"
-        ${isIn ? raw('aria-pressed="true"') : ""}
-      >
-        ${isIn ? checkIcon : ""}I'm in
+      <button class="btn primary" type="submit" name="attending" value="in">
+        I'm in
       </button>
     </div>
     ${error(issues.attending, "attending-err")}
-    ${
-      response
-        ? ""
-        : html`<p class="note">
-            Takes about a minute. No app or account needed.
-          </p>`
-    }
   </form>`;
 }
 
@@ -733,6 +717,12 @@ function calendar(event: EventRow, days: Set<string>) {
   });
 }
 
+// aria-describedby from whichever of a hint and an error are present.
+function describedBy(...ids: string[]) {
+  const list = ids.filter(Boolean).join(" ");
+  return list ? raw(`aria-describedby="${list}"`) : "";
+}
+
 function questionCard(
   question: Question,
   event: EventRow,
@@ -745,7 +735,10 @@ function questionCard(
     : "";
   switch (question.kind) {
     case "dates":
-      return html`<fieldset class="q">
+      return html`<fieldset
+        class="q"
+        ${issues.day ? raw('aria-describedby="day-err"') : ""}
+      >
         <legend><span class="hl">${question.title}</span></legend>
         ${hint} ${error(issues.day, "day-err")}
         <div class="cal" data-cal>
@@ -788,7 +781,10 @@ function questionCard(
         ${error(issues.budgetOther, "budgetOther-err")}
       </fieldset>`;
     case "choice":
-      return html`<fieldset class="q">
+      return html`<fieldset
+        class="q"
+        ${issues[key] ? raw(`aria-describedby="${key}-err"`) : ""}
+      >
         <legend><span class="hl">${question.title}</span></legend>
         ${hint} ${error(issues[key], `${key}-err`)}
         <div class="rows">
@@ -820,7 +816,7 @@ function questionCard(
           name="${key}"
           rows="3"
           maxlength="500"
-          ${question.hint ? raw(`aria-describedby="${key}-hint"`) : ""}
+          ${describedBy(question.hint ? `${key}-hint` : "", issues[key] ? `${key}-err` : "")}
           ${issues[key] ? raw('aria-invalid="true"') : ""}
         >
 ${values.texts[question.id] ?? ""}</textarea>
@@ -837,10 +833,26 @@ function questionsPage(
   rsvpIssues: Issues = {},
   name = response.name,
 ) {
-  return html`${header(event)}${rsvpForm(event, response, name, rsvpIssues)}
-    <hr class="rule" />
+  // One form saves the name and the answers together; the way out is a
+  // quiet link in the same form.
+  return html`${header(event)}
     <form method="post" action="/i/${event.slug}" id="answers">
       <input type="hidden" name="answers" value="1" />
+      <div class="rsvp">
+        ${nameField(name, rsvpIssues)}
+        <div class="links">
+          <button
+            class="link"
+            type="submit"
+            name="attending"
+            value="out"
+            formnovalidate
+          >
+            Can't make it after all
+          </button>
+        </div>
+      </div>
+      <hr class="rule" />
       ${event.questions.map((q) => questionCard(q, event, values, issues))}
       <button class="btn primary send" type="submit">Send my answers</button>
     </form>`;
@@ -854,16 +866,13 @@ function appCard(event: EventRow, token: string, options: InviteOptions) {
   // The app's own scheme: a Universal Link to this same site stays in the
   // browser by Apple's rule, so only the scheme opens an installed app here.
   const open = `circles://invite?slug=${event.slug}&g=${encodeURIComponent(token)}`;
+  if (!options.appStoreUrl)
+    return html`<a class="quiet" href="${open}">Open in the app</a>`;
   return html`<aside class="app">
     <div class="app-mark">${markIcon}</div>
-    ${
-      options.appStoreUrl
-        ? html`<h2>Get the Circles app</h2>
-            <p>See this plan and your other events in one place.</p>
-            <a class="btn primary" href="${options.appStoreUrl}">Get the app</a>
-            <a class="quiet" href="${open}">Open in the app</a>`
-        : html`<a class="btn primary" href="${open}">Open in the app</a>`
-    }
+    <h2>Get the Circles app</h2>
+    <a class="btn primary" href="${options.appStoreUrl}">Get the app</a>
+    <a class="quiet" href="${open}">Open in the app</a>
   </aside>`;
 }
 
@@ -908,7 +917,7 @@ function donePage(
       ${
         event.questions.length > 0
           ? html`<a class="link" href="/i/${event.slug}?edit"
-              >Change answers</a
+              >Change my answers</a
             >`
           : ""
       }
@@ -935,7 +944,7 @@ function declinedPage(event: EventRow, token: string, options: InviteOptions) {
 }
 
 const rsvpPage = (event: EventRow, name: string, issues: Issues) =>
-  html`${header(event)}${rsvpForm(event, undefined, name, issues)}`;
+  html`${header(event)}${rsvpForm(event, name, issues)}`;
 
 // The name is already on the list as someone who is in: the same person
 // from another browser, or a second person with the name. Nothing of the
@@ -1097,14 +1106,41 @@ export function invitePages(db: Db, options: InviteOptions = {}) {
     if (form.has("answers")) {
       if (!response || !token || !response.attending)
         return c.redirect(`/i/${slug}`, 303);
+      // Backing out from the questions page.
+      if (field(form, "attending") === "out") {
+        await saveRsvp(db, event, response, token, { attending: false });
+        return c.redirect(`/i/${slug}`, 303);
+      }
       const { answers, values, issues } = answersFrom(form, event);
-      if (Object.keys(issues).length > 0)
+      // The name can be corrected along with the answers.
+      const typed = form.get("name");
+      const nameIssues: Issues = {};
+      let name: string | undefined;
+      if (typeof typed === "string") {
+        const parsed = DisplayName.safeParse(typed);
+        if (parsed.success) name = parsed.data;
+        else
+          nameIssues.name = parsed.error.issues[0]?.message ?? "Enter a name";
+      }
+      if (Object.keys(issues).length > 0 || nameIssues.name)
         return c.html(
-          page(event, origin, questionsPage(event, response, values, issues), [
-            script,
-          ]),
+          page(
+            event,
+            origin,
+            questionsPage(
+              event,
+              response,
+              values,
+              issues,
+              nameIssues,
+              typeof typed === "string" ? typed : response.name,
+            ),
+            [script],
+          ),
           400,
         );
+      if (name !== undefined && name !== response.name)
+        await saveRsvp(db, event, response, token, { attending: true, name });
       await saveAnswers(db, event, response, answers);
       return c.redirect(`/i/${slug}`, 303);
     }
@@ -1174,7 +1210,9 @@ export function inviteClaims(db: Db, options: InviteOptions = {}) {
     if (!event || !response)
       throw new HTTPException(404, { message: "Invite not found" });
     if (response.accountId && response.accountId !== accountId)
-      throw new HTTPException(409, { message: "Someone else claimed this" });
+      throw new HTTPException(409, {
+        message: "This link was already used by someone else",
+      });
     if (!response.accountId)
       await db.transaction(async (tx) => {
         const [mine] = await tx.query(
@@ -1193,7 +1231,7 @@ export function inviteClaims(db: Db, options: InviteOptions = {}) {
         );
         if (!claimed)
           throw new HTTPException(409, {
-            message: "Someone else claimed this",
+            message: "This link was already used by someone else",
           });
         // No answer changed hands, so the itineraries stand as they are.
         await tx.query(

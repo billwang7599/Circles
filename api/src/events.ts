@@ -130,7 +130,9 @@ async function eventView(
       id: r.id,
       name: r.name,
       attending: r.attending,
-      answered: r.attending && r.answers !== null,
+      // With nothing to ask, being in is having answered.
+      answered:
+        r.attending && (r.answers !== null || event.questions.length === 0),
       you: r.accountId === accountId,
       answers:
         isOrganizer && r.answers ? answerLines(event.questions, r.answers) : [],
@@ -314,7 +316,9 @@ export function events(
         )
       : [];
     if (!response)
-      throw new HTTPException(404, { message: "Response not found" });
+      throw new HTTPException(404, {
+        message: "They're already off the list",
+      });
     if (response.accountId === event.organizerId)
       throw new HTTPException(400, {
         message: "The organizer can't be removed",

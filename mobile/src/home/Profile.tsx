@@ -7,58 +7,42 @@ import {
   useAppearance,
   type AppearanceChoice,
 } from "../appearance";
-import { isPast, todayKey } from "../dates";
+import { isPast } from "../dates";
 import { signOut } from "../session";
 import { Avatar } from "../ui/Avatar";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Field } from "../ui/Field";
-import { Icon, type IconName } from "../ui/Icon";
 import { Section } from "../ui/Section";
 import { Segmented } from "../ui/Segmented";
 import { Stat } from "../ui/Stat";
 import { Text } from "../ui/Text";
-import { space, useTheme } from "../ui/theme";
+import { space } from "../ui/theme";
 
-const APPEARANCE_OPTIONS: readonly {
-  id: AppearanceChoice;
-  label: string;
-  icon: IconName;
-}[] = [
-  { id: "system", label: "System", icon: "sun-moon" },
-  { id: "light", label: "Light", icon: "sun" },
-  { id: "dark", label: "Dark", icon: "moon-star" },
+const APPEARANCE_OPTIONS: readonly { id: AppearanceChoice; label: string }[] = [
+  { id: "system", label: "System" },
+  { id: "light", label: "Light" },
+  { id: "dark", label: "Dark" },
 ];
 
 // The account as an event's screen opens: a kicker, the name in Display
 // type, counters and the avatar where the people who are in would be.
 function Hero({ me }: { me: Me }) {
-  const { colors } = useTheme();
   const name = me.displayName ?? "";
-  const today = todayKey();
-  const upcoming = me.events.filter((event) => !isPast(event, today));
+  const upcoming = me.events.filter((event) => !isPast(event));
   const organizing = me.events.filter((event) => event.isOrganizer);
   return (
     <View style={styles.hero}>
       <View style={styles.titleBlock}>
-        <View style={styles.kicker}>
-          <Icon name="mail" size={16} color={colors.textMuted} />
-          <Text
-            color="textMuted"
-            variant="section"
-            numberOfLines={1}
-            style={styles.grow}
-          >
-            {me.email}
-          </Text>
-        </View>
+        <Text color="textMuted" variant="section" numberOfLines={1}>
+          {me.email}
+        </Text>
         <Text
           variant="display"
           accessibilityRole="header"
           numberOfLines={2}
           adjustsFontSizeToFit
           minimumFontScale={0.6}
-          style={styles.name}
         >
           {name}
         </Text>
@@ -98,7 +82,7 @@ function NameCard({ name }: { name: string }) {
   return (
     <Card>
       <Field
-        label="Display name"
+        label="Your name"
         value={draft}
         onChangeText={setDraft}
         error={error ?? save.error?.message}
@@ -140,12 +124,7 @@ export function Profile({ me }: { me: Me }) {
           onChange={setAppearance}
         />
       </Section>
-      <Button
-        title="Sign out"
-        variant="destructive"
-        icon="log-out"
-        onPress={signOut}
-      />
+      <Button title="Sign out" variant="destructive" onPress={signOut} />
     </View>
   );
 }
@@ -155,9 +134,6 @@ const styles = StyleSheet.create({
   hero: { gap: space.xl },
   // As on an event's screen: the kicker keeps its own gap from the name.
   titleBlock: { gap: space.md },
-  kicker: { flexDirection: "row", alignItems: "center", gap: space.sm },
-  // Display's line height sits under its size; a wrapped name needs room.
-  name: { lineHeight: 56 },
   heroMeta: { flexDirection: "row", alignItems: "flex-end", gap: space.xl },
   grow: { flex: 1 },
   saveRow: { flexDirection: "row", gap: space.sm },

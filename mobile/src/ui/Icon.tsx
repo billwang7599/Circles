@@ -5,22 +5,18 @@ import { SymbolView, type SymbolViewProps } from "expo-symbols";
 export type IconName =
   | "arrow-left"
   | "arrow-right"
-  | "calendar"
   | "check"
+  | "chevron-down"
+  | "chevron-up"
   | "ellipsis"
   | "grip"
   | "link"
-  | "lock"
-  | "log-out"
-  | "mail"
   | "map-pin"
-  | "moon-star"
   | "people"
   | "pencil"
   | "plus"
   | "share"
   | "sun"
-  | "sun-moon"
   | "sunrise"
   | "sunset"
   | "xmark";
@@ -28,22 +24,18 @@ export type IconName =
 const symbols: Record<IconName, SymbolViewProps["name"]> = {
   "arrow-left": "arrow.left",
   "arrow-right": "arrow.right",
-  calendar: "calendar",
   check: "checkmark",
+  "chevron-down": "chevron.down",
+  "chevron-up": "chevron.up",
   ellipsis: "ellipsis",
   grip: "line.3.horizontal",
   link: "link",
-  lock: "lock",
-  "log-out": "rectangle.portrait.and.arrow.right",
-  mail: "envelope",
   "map-pin": "mappin.and.ellipse",
-  "moon-star": "moon.stars",
   pencil: "pencil",
   people: "person.2.fill",
   plus: "plus",
   share: "square.and.arrow.up",
   sun: "sun.max",
-  "sun-moon": "circle.lefthalf.filled",
   sunrise: "sunrise",
   sunset: "sunset",
   xmark: "xmark",
@@ -54,22 +46,18 @@ const feather: Record<IconName, React.ComponentProps<typeof Feather>["name"]> =
   {
     "arrow-left": "arrow-left",
     "arrow-right": "arrow-right",
-    calendar: "calendar",
     check: "check",
+    "chevron-down": "chevron-down",
+    "chevron-up": "chevron-up",
     ellipsis: "more-horizontal",
     grip: "menu",
     link: "link",
-    lock: "lock",
-    "log-out": "log-out",
-    mail: "mail",
     "map-pin": "map-pin",
-    "moon-star": "moon",
     pencil: "edit-2",
     people: "users",
     plus: "plus",
     share: "share",
     sun: "sun",
-    "sun-moon": "smartphone",
     sunrise: "sunrise",
     sunset: "sunset",
     xmark: "x",

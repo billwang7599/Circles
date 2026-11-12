@@ -8,17 +8,39 @@ import {
 } from "@tanstack/react-query";
 import { useFonts } from "expo-font";
 import * as Linking from "expo-linking";
-import { router, Stack, usePathname } from "expo-router";
+import {
+  router,
+  Stack,
+  usePathname,
+  type ErrorBoundaryProps,
+} from "expo-router";
 import * as SystemUI from "expo-system-ui";
 import { useEffect, useRef } from "react";
-import { AppState, StatusBar } from "react-native";
+import { AppState, StatusBar, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { isRefusal } from "../api";
 import { inviteParams } from "../inviteLink";
 import { useSignedIn } from "../session";
+import { ErrorState } from "../ui/ErrorState";
+import { Screen } from "../ui/Screen";
 import { useTheme } from "../ui/theme";
 
 // A link opened cold still gets Home underneath, so Back has somewhere to go.
 export const unstable_settings = { anchor: "index" };
+
+// A screen that throws shows its error and a retry instead of a blank app.
+// It stands in for the whole stack, header included, so it clears the
+// status bar itself.
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  const insets = useSafeAreaInsets();
+  return (
+    <Screen>
+      <View style={{ marginTop: insets.top }}>
+        <ErrorState message={error.message} onRetry={() => void retry()} />
+      </View>
+    </Screen>
+  );
+}
 
 const queryClient = new QueryClient({
   // Retry only when the server could not be reached; a refusal is final.

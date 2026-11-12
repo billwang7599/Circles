@@ -15,6 +15,6 @@ export function Empty({ text }: Props) {
 }
 
 const styles = StyleSheet.create({
-  empty: { alignItems: "center", gap: space.md, paddingVertical: space.xl },
+  empty: { alignItems: "center", paddingVertical: space.md },
   text: { textAlign: "center" },
 });

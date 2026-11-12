@@ -37,9 +37,7 @@ export function Chip({ label, selected = false, onPress }: Props) {
 const styles = StyleSheet.create({
   chip: {
     minHeight: size.small,
-    flexDirection: "row",
     alignItems: "center",
-    gap: space.inline,
     borderRadius: radius.full,
     borderWidth: 1.2,
     paddingHorizontal: space.lg,

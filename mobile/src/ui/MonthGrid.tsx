@@ -1,36 +1,47 @@
+import { iso, lastDayOf, weekdayOf, ymd } from "@circles/shared";
 import type { ReactNode } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
-import { Icon, type IconName } from "./Icon";
+import { StyleSheet, View } from "react-native";
+import { RoundButton } from "./RoundButton";
 import { Text } from "./Text";
 import { radius, size, space, useTheme } from "./theme";
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const pad = (n: number) => String(n).padStart(2, "0");
+const WEEKDAYS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
 
+// A calendar month; `month` is 1 to 12, as the shared date helpers count.
 export type Month = { year: number; month: number };
-
-const dayKey = (year: number, month: number, day: number) =>
-  `${year}-${pad(month + 1)}-${pad(day)}`;
 
 // The month a YYYY-MM-DD day falls in.
 export function monthOf(date: string): Month {
-  const [year, month] = date.split("-").map(Number) as [number, number];
-  return { year, month: month - 1 };
+  const { year, month } = ymd(date);
+  return { year, month };
 }
 
 export function addMonths({ year, month }: Month, by: number): Month {
-  const date = new Date(Date.UTC(year, month + by, 1));
-  return { year: date.getUTCFullYear(), month: date.getUTCMonth() };
+  return monthOf(iso(year, month + by, 1));
 }
 
-// The month's days, led by blanks so the 1st lands on its weekday.
-function monthCells(year: number, month: number) {
-  const first = new Date(Date.UTC(year, month, 1)).getUTCDay();
-  const days = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  return [
+// The month's days as weeks of seven, blanks before the 1st and after the
+// last so every row has a cell per column.
+function weeksOf({ year, month }: Month): (number | null)[][] {
+  const first = weekdayOf(iso(year, month, 1));
+  const days = lastDayOf(year, month);
+  const cells: (number | null)[] = [
     ...Array.from({ length: first }, () => null),
     ...Array.from({ length: days }, (_, i) => i + 1),
   ];
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks: (number | null)[][] = [];
+  for (let at = 0; at < cells.length; at += 7)
+    weeks.push(cells.slice(at, at + 7));
+  return weeks;
 }
 
 // "October ’26", the month written the way the calendar heads it.
@@ -38,42 +49,11 @@ function monthTitle({ year, month }: Month) {
   const name = new Intl.DateTimeFormat(undefined, {
     month: "long",
     timeZone: "UTC",
-  }).format(new Date(Date.UTC(year, month, 1)));
+  }).format(new Date(Date.UTC(year, month - 1, 1)));
   return `${name} ’${String(year).slice(2)}`;
 }
 
-function Arrow({
-  icon,
-  label,
-  disabled = false,
-  onPress,
-}: {
-  icon: IconName;
-  label: string;
-  disabled?: boolean;
-  onPress: () => void;
-}) {
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.arrow,
-        {
-          borderColor: colors.input,
-          opacity: disabled ? 0.3 : pressed ? 0.7 : 1,
-        },
-      ]}
-    >
-      <Icon name={icon} size={18} color={colors.foreground} />
-    </Pressable>
-  );
-}
-
-// The month's name with an outlined arrow either way.
+// The month's name with a round button either way.
 export function MonthHeader({
   month,
   onMove,
@@ -94,18 +74,23 @@ export function MonthHeader({
       >
         {monthTitle(month)}
       </Text>
-      <Arrow
+      <RoundButton
         icon="arrow-left"
         label="Previous month"
         disabled={!canGoBack}
         onPress={() => onMove(-1)}
       />
-      <Arrow icon="arrow-right" label="Next month" onPress={() => onMove(1)} />
+      <RoundButton
+        icon="arrow-right"
+        label="Next month"
+        onPress={() => onMove(1)}
+      />
     </View>
   );
 }
 
-// Weekday heads over the month's days; each day draws itself.
+// Weekday heads over the month's days, a row per week with a cell per
+// column; each day draws itself.
 export function MonthGrid({
   month,
   renderDay,
@@ -115,28 +100,39 @@ export function MonthGrid({
 }) {
   return (
     <View style={styles.grid}>
-      {WEEKDAYS.map((name) => (
-        <View key={name} style={styles.cell}>
-          <Text variant="body" color="textMuted" style={styles.weekday}>
-            {name.slice(0, 1)}
-          </Text>
+      <View style={styles.week}>
+        {WEEKDAYS.map((name) => (
+          <View key={name} style={styles.cell}>
+            <Text
+              variant="body"
+              color="textMuted"
+              accessibilityLabel={name}
+              style={styles.weekday}
+            >
+              {name.slice(0, 1)}
+            </Text>
+          </View>
+        ))}
+      </View>
+      {weeksOf(month).map((week, row) => (
+        <View key={row} style={styles.week}>
+          {week.map((day, column) =>
+            day === null ? (
+              <View key={`blank${column}`} style={styles.cell} />
+            ) : (
+              <View key={day} style={styles.cell}>
+                {renderDay(iso(month.year, month.month, day), day)}
+              </View>
+            ),
+          )}
         </View>
       ))}
-      {monthCells(month.year, month.month).map((day, index) =>
-        day === null ? (
-          <View key={`blank${index}`} style={styles.cell} />
-        ) : (
-          <View key={day} style={styles.cell}>
-            {renderDay(dayKey(month.year, month.month, day), day)}
-          </View>
-        ),
-      )}
     </View>
   );
 }
 
-// A day's number in its round: filled when chosen, ringed dark for today,
-// faintly ringed otherwise, and bare when it cannot be picked.
+// A day's number: filled in ink when chosen, ringed for today, faint when
+// it cannot be picked, bare otherwise.
 export function DayNumber({
   day,
   filled = false,
@@ -157,13 +153,10 @@ export function DayNumber({
           ? { backgroundColor: colors.primary }
           : ringed
             ? { borderWidth: 2, borderColor: colors.primary }
-            : muted
-              ? null
-              : { borderWidth: 1, borderColor: colors.border },
+            : null,
       ]}
     >
       <Text
-        allowFontScaling={false}
         variant="input"
         style={{
           color: filled
@@ -180,21 +173,14 @@ export function DayNumber({
   );
 }
 
-export const daySize = 42;
+export const daySize = size.control;
 
 const styles = StyleSheet.create({
   monthRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
   grow: { flex: 1 },
-  arrow: {
-    width: size.control,
-    height: size.small,
-    borderRadius: radius.full,
-    borderWidth: 1.2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  grid: { flexDirection: "row", flexWrap: "wrap", rowGap: space.xs },
-  cell: { width: `${100 / 7}%`, alignItems: "center" },
+  grid: { gap: space.xs },
+  week: { flexDirection: "row" },
+  cell: { flex: 1, alignItems: "center" },
   weekday: { paddingBottom: space.xs },
   number: {
     width: daySize,

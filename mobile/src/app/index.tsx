@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { isRefusal, useMe, useSaveName } from "../api";
-import { isPast, todayKey } from "../dates";
+import { isPast } from "../dates";
 import { EventTile } from "../home/EventTile";
 import { FeaturedEvents } from "../home/FeaturedEvents";
 import { Logo } from "../home/Logo";
@@ -34,30 +34,39 @@ export default function Home() {
   if (me.data && !me.data.displayName) return <Welcome />;
 
   const loading = !me.data || isRefusal(me.error);
-  const today = todayKey();
   const events = me.data?.events ?? [];
   // Soonest first; the summaries arrive newest first.
   const upcoming = events
-    .filter((event) => !isPast(event, today))
+    .filter((event) => !isPast(event))
     .sort((a, b) => a.windowStart.localeCompare(b.windowStart));
   const past = events
-    .filter((event) => isPast(event, today))
+    .filter((event) => isPast(event))
     .sort((a, b) => b.windowEnd.localeCompare(a.windowEnd));
   const shown = tab === "upcoming" ? upcoming : past;
   const openNew = () => router.push(newEventHref);
 
+  // With no events at all the sheet holds only the pill. On Upcoming the
+  // strip already says when nothing is coming up, so the sheet stays quiet.
   const sheet = (
     <View style={styles.sheet}>
-      <View style={styles.sheetTitle}>
-        <Text variant="headline" accessibilityRole="header" style={styles.grow}>
-          My events
-        </Text>
-        <RoundButton icon="plus" label="New event" onPress={openNew} />
-      </View>
+      {events.length > 0 ? (
+        <View style={styles.sheetTitle}>
+          <Text
+            variant="headline"
+            accessibilityRole="header"
+            style={styles.grow}
+          >
+            My events
+          </Text>
+          <RoundButton icon="plus" label="New event" onPress={openNew} />
+        </View>
+      ) : null}
       {events.length === 0 ? (
         <Button title="Start an event" icon="plus" onPress={openNew} />
       ) : shown.length === 0 ? (
-        <Empty text={tab === "past" ? "No past events" : "Nothing coming up"} />
+        tab === "past" ? (
+          <Empty text="No past events" />
+        ) : null
       ) : (
         <View style={styles.tiles}>
           {shown.map((event) => (
@@ -102,9 +111,9 @@ export default function Home() {
         ) : (
           <ActivityIndicator />
         )
-      ) : (
+      ) : tab === "upcoming" ? (
         <FeaturedEvents events={upcoming.slice(0, 3)} />
-      )}
+      ) : null}
     </Screen>
   );
 }
@@ -155,12 +164,12 @@ const styles = StyleSheet.create({
   },
   grow: { flex: 1 },
   sheet: { gap: space.md },
-  // Tall enough for its button, so the row holds its height without it.
+  // The title lands on the 20 pt gutter: the sheet's 12 pt plus 8.
   sheetTitle: {
     flexDirection: "row",
     alignItems: "center",
     gap: space.sm,
-    paddingLeft: space.md,
+    paddingLeft: space.sm,
   },
   tiles: { gap: space.md },
   welcome: { gap: space.xl },

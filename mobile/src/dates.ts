@@ -1,4 +1,4 @@
-import { localDate, type EventSummary } from "@circles/shared";
+import { hasEnded, localDate, type EventSummary } from "@circles/shared";
 
 // The device's IANA timezone; Hermes can leave it empty.
 export const deviceTimezone = () =>
@@ -17,6 +17,6 @@ export const formatDay = (date: string) =>
     timeZone: "UTC",
   }).format(new Date(date));
 
-// An event is past once its window has ended.
-export const isPast = (event: EventSummary, today: string) =>
-  event.windowEnd < today;
+// An event is past once its window has ended, by the same clock the event
+// screen says "Ended" on.
+export const isPast = (event: EventSummary) => hasEnded(event.windowEnd);

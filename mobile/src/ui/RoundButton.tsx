@@ -2,14 +2,17 @@ import { Pressable, StyleSheet } from "react-native";
 import { Icon, type IconName } from "./Icon";
 import { radius, space, useTheme } from "./theme";
 
-// The small outlined circle of a screen's top bar.
+// The small outlined circle of a screen's top bar, and of a calendar's
+// month header.
 export function RoundButton({
   icon,
   label,
+  disabled = false,
   onPress,
 }: {
   icon: IconName;
   label: string;
+  disabled?: boolean;
   onPress: () => void;
 }) {
   const { colors } = useTheme();
@@ -17,14 +20,15 @@ export function RoundButton({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
       hitSlop={space.xs}
       style={({ pressed }) => [
         styles.round,
         {
-          backgroundColor: "transparent",
           borderColor: colors.input,
-          opacity: pressed ? 0.7 : 1,
+          opacity: disabled ? 0.3 : pressed ? 0.7 : 1,
         },
       ]}
     >

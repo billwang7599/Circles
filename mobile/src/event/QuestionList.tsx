@@ -13,20 +13,6 @@ import { IconButton } from "../ui/IconButton";
 import { Text } from "../ui/Text";
 import { radius, size, space, useTheme } from "../ui/theme";
 
-// How invitees answer the question, in a word or two.
-function questionDetail(question: Question) {
-  switch (question.kind) {
-    case "dates":
-      return "Calendar";
-    case "budget":
-      return "Budget ranges";
-    case "choice":
-      return "Pick any";
-    case "text":
-      return "Open text";
-  }
-}
-
 export function moveItem<T>(list: T[], from: number, to: number): T[] {
   const next = [...list];
   const [item] = next.splice(from, 1);
@@ -47,8 +33,8 @@ type Props = {
   onAdd?: () => void;
 };
 
-// One chalk list: the locked Name row, a row per question with a handle to
-// drag it up or down, and the row that adds one.
+// One chalk list: a row per question with a handle to drag it up or down,
+// and the row that adds one. The name is always asked and is not a row.
 export function QuestionList({
   questions,
   onEdit,
@@ -75,20 +61,10 @@ export function QuestionList({
   return (
     // Not clipped: a held row must stay in view past the card's edge.
     <Card list style={styles.unclipped}>
-      <View style={[styles.row, styles.lockedRow]}>
-        <View style={styles.text}>
-          <Text variant="headline">Name</Text>
-          <Text color="textMuted">Always asked</Text>
-        </View>
-        <View style={styles.lock}>
-          <Icon name="lock" size={18} color={colors.textMuted} />
-        </View>
-      </View>
       {questions.map((question, index) => (
         <QuestionRow
           key={question.id}
           question={question}
-          detail={questionDetail(question)}
           first={index === 0}
           last={index === questions.length - 1}
           onLayout={(event) =>
@@ -131,7 +107,6 @@ export function QuestionList({
 
 function QuestionRow({
   question,
-  detail,
   first,
   last,
   onLayout,
@@ -142,7 +117,6 @@ function QuestionRow({
   onDragEnd,
 }: {
   question: Question;
-  detail: string;
   first: boolean;
   last: boolean;
   onLayout: (event: LayoutChangeEvent) => void;
@@ -209,21 +183,18 @@ function QuestionRow({
       >
         <Icon name="grip" size={18} color={colors.textMuted} />
       </View>
-      <View style={styles.text}>
-        <Text variant="headline">{question.title}</Text>
-        <Text color="textMuted">{detail}</Text>
-      </View>
+      <Text variant="headline" style={styles.text}>
+        {question.title}
+      </Text>
       <View style={styles.actions}>
         <IconButton
           icon="pencil"
           label={`Edit ${question.title}`}
-          iconSize={18}
           onPress={onEdit}
         />
         <IconButton
           icon="xmark"
           label={`Remove ${question.title}`}
-          iconSize={18}
           onPress={onRemove}
         />
       </View>
@@ -231,32 +202,27 @@ function QuestionRow({
   );
 }
 
-// The drag handle column; the Name row has none, so it pads by the same
-// width to keep its text in line with the question titles.
-const HANDLE_WIDTH = 36;
-
 const styles = StyleSheet.create({
   unclipped: { overflow: "visible" },
+  // The glyphs at either end sit where the Who's in list puts its own.
   row: {
     flexDirection: "row",
     alignItems: "center",
     gap: space.sm,
-    paddingLeft: space.xs,
-    paddingRight: space.sm,
+    paddingRight: space.xs,
     paddingVertical: space.md,
     zIndex: 0,
   },
   lifted: { zIndex: 10 },
-  lockedRow: { paddingLeft: space.xs + HANDLE_WIDTH + space.sm },
+  // The drag handle is a full-size target.
   handle: {
-    width: HANDLE_WIDTH,
+    width: size.control,
     alignSelf: "stretch",
     alignItems: "center",
     justifyContent: "center",
   },
   text: { flex: 1 },
   actions: { flexDirection: "row", alignItems: "center" },
-  lock: { width: size.control, alignItems: "center" },
   footer: { padding: space.md },
   add: {
     flexDirection: "row",
@@ -264,7 +230,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: space.sm,
     minHeight: size.control,
-    borderWidth: 1.5,
+    borderWidth: 1.2,
     borderStyle: "dashed",
     borderRadius: radius.full,
     paddingHorizontal: space.lg,

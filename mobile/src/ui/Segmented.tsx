@@ -7,6 +7,8 @@ type Props<T extends string> = {
   options: readonly { id: T; label: string; icon?: IconName }[];
   value: T | null;
   onChange: (value: T) => void;
+  // What the group is for, when no heading says it.
+  label?: string;
 };
 
 // Joined choices in one pill; one at most is picked.
@@ -14,11 +16,13 @@ export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  label,
 }: Props<T>) {
   const { colors } = useTheme();
   return (
     <View
       accessibilityRole="radiogroup"
+      accessibilityLabel={label}
       style={[styles.group, { borderColor: colors.input }]}
     >
       {options.map((option, index) => {

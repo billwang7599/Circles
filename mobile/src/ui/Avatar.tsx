@@ -8,9 +8,8 @@ type Props = {
   name: string;
   color: AvatarColor;
   outlined?: boolean;
+  // A ring in the background colour, so stacked avatars cut each other out.
   ring?: boolean;
-  // The colour of the ring, where the avatar sits on something other than the background.
-  ringColor?: string;
   size?: number;
 };
 
@@ -19,32 +18,29 @@ export function Avatar({
   color,
   outlined = false,
   ring = false,
-  ringColor,
   size = avatarSize,
 }: Props) {
   const { colors } = useTheme();
+  // Two initials, or one in a small disc where two would run into the next.
   const initials = name
-    .split(/\s+/, 2)
+    .split(/\s+/, size < 36 ? 1 : 2)
     .map((word) => [...word][0] ?? "")
     .join("")
     .toUpperCase();
   return (
     <View
       accessible={false}
+      accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
       style={[
         styles.avatar,
         { width: size, height: size },
         outlined
-          ? {
-              backgroundColor: "transparent",
-              borderWidth: 1,
-              borderColor: colors.border,
-            }
+          ? { borderWidth: 1, borderColor: colors.border }
           : {
               backgroundColor: avatarColors[color],
               borderWidth: ring ? Math.max(1.5, size / 16) : 0,
-              borderColor: ringColor ?? colors.background,
+              borderColor: colors.background,
             },
       ]}
     >

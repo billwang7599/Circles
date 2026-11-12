@@ -31,6 +31,6 @@ export function Section({ title, action, children }: Props) {
 
 const styles = StyleSheet.create({
   section: { gap: space.md },
-  titleRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
+  titleRow: { flexDirection: "row", alignItems: "baseline", gap: space.sm },
   grow: { flex: 1 },
 });

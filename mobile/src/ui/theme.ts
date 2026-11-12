@@ -10,11 +10,12 @@ export const font = {
 
 // Inter Medium at every size, tracked tighter as it grows.
 export const typeScale = {
-  // The featured event on Home and an event's title on its own screen.
+  // The featured event on Home and an event's title on its own screen. The
+  // line height clears the size so a wrapped title keeps its descenders.
   display: {
     fontFamily: font.medium,
     fontSize: 52,
-    lineHeight: 50,
+    lineHeight: 56,
     letterSpacing: -3.1,
   },
   // An event's title on its home tile.
@@ -119,14 +120,9 @@ export const avatarColors: Record<AvatarColor, string> = {
   rose: "#ba2c5b",
 } as const;
 
-// Each event wears one of these: the tile fill, the ink on it, and the pill
-// that sits on the ink's side of the tile, whose text is the tone itself.
-export type EventTone = {
-  fill: string;
-  ink: string;
-  chip: string;
-  onChip: string;
-};
+// Each event wears one of these: the tile fill and the ink on it. A pill on
+// the tile is the ink with the fill as its text.
+export type EventTone = { fill: string; ink: string };
 
 const toneInk = "#141414";
 
@@ -139,7 +135,7 @@ const eventTones: readonly EventTone[] = [
   "#e6714c",
   "#dfaab6",
   "#d1cf9d",
-].map((fill) => ({ fill, ink: toneInk, chip: toneInk, onChip: fill }));
+].map((fill) => ({ fill, ink: toneInk }));
 
 // Keyed on the id, so an event keeps its colour for life.
 export function eventTone(eventId: string): EventTone {

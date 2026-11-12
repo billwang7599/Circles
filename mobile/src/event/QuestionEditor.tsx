@@ -5,21 +5,14 @@ import {
   type QuestionKind,
 } from "@circles/shared";
 import { useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Modal, StyleSheet, View } from "react-native";
 import { Button } from "../ui/Button";
 import { Chip } from "../ui/Chip";
 import { Field, useIssues } from "../ui/Field";
 import { IconButton } from "../ui/IconButton";
+import { Screen } from "../ui/Screen";
 import { Text } from "../ui/Text";
-import { size, space, useTheme } from "../ui/theme";
+import { space } from "../ui/theme";
 
 const kindLabels: Record<QuestionKind, string> = {
   dates: "Dates",
@@ -40,10 +33,9 @@ type Props = {
 };
 
 // A sheet to write one question: its kind, title, hint and, by kind, the
-// budget amounts or the options.
+// budget amounts or the options. Laid out by the shared Screen, so Save sits
+// in the footer like every other form's primary.
 export function QuestionEditor({ question, kinds, onSave, onClose }: Props) {
-  const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   const [kind, setKind] = useState<QuestionKind>(
     question?.kind ?? kinds[0] ?? "text",
   );
@@ -114,145 +106,123 @@ export function QuestionEditor({ question, kinds, onSave, onClose }: Props) {
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={[styles.sheet, { backgroundColor: colors.background }]}
+      <Screen
+        footer={
+          <View style={styles.footer}>
+            <Button title="Save" onPress={save} />
+          </View>
+        }
       >
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[
-            styles.content,
-            { paddingBottom: insets.bottom + space.xl },
-          ]}
-        >
-          <View style={styles.heading}>
-            <Text
-              variant="title"
-              accessibilityRole="header"
-              style={styles.grow}
-            >
-              {question ? "Edit question" : "Add a question"}
-            </Text>
-            <IconButton icon="xmark" label="Close" onPress={onClose} />
+        <View style={styles.heading}>
+          <Text variant="title" accessibilityRole="header" style={styles.grow}>
+            {question ? "Edit question" : "Add a question"}
+          </Text>
+          <IconButton icon="xmark" label="Close" onPress={onClose} />
+        </View>
+        {question ? null : (
+          <View style={styles.kinds}>
+            {kinds.map((option) => (
+              <Chip
+                key={option}
+                label={kindLabels[option]}
+                selected={option === kind}
+                onPress={() => setKind(option)}
+              />
+            ))}
           </View>
-          {question ? null : (
-            <View style={styles.kinds}>
-              {kinds.map((option) => (
-                <Chip
-                  key={option}
-                  label={kindLabels[option]}
-                  selected={option === kind}
-                  onPress={() => setKind(option)}
-                />
-              ))}
-            </View>
-          )}
-          <View style={styles.group}>
-            <Field
-              label="Question"
-              value={title}
-              onChangeText={setTitle}
-              error={issue("title")}
-              maxLength={60}
-              autoFocus={!question}
-            />
-            <Field
-              placeholder="Hint (optional)"
-              value={hint}
-              onChangeText={setHint}
-              error={issue("hint")}
-              maxLength={120}
-            />
-          </View>
+        )}
+        <View style={styles.group}>
+          <Field
+            placeholder="Question"
+            value={title}
+            onChangeText={setTitle}
+            error={issue("title")}
+            maxLength={60}
+            autoFocus={!question}
+          />
+          <Field
+            placeholder="Hint"
+            value={hint}
+            onChangeText={setHint}
+            error={issue("hint")}
+            maxLength={120}
+          />
           {kind === "budget" ? (
             <Field
-              label="Amounts"
               prefix="$"
+              placeholder="300, 600, 1000"
+              accessibilityLabel="Amounts"
               value={amounts}
               onChangeText={setAmounts}
               error={issue("presets")}
-              placeholder="300, 600, 1000"
               keyboardType="numbers-and-punctuation"
             />
           ) : null}
-          {kind === "choice" ? (
-            <View style={styles.options}>
-              <Text variant="section" accessibilityRole="header">
-                Options
-              </Text>
-              {choices.map((choice, index) => (
-                <View key={choice.id} style={styles.option}>
-                  <View style={styles.grow}>
-                    <Field
-                      placeholder="Option"
-                      accessibilityLabel={`Option ${index + 1}`}
-                      value={choice.label}
-                      onChangeText={(label) => setChoice(choice.id, { label })}
-                      maxLength={40}
-                      autoFocus={choice.id === added}
-                    />
-                  </View>
-                  <View style={styles.detail}>
-                    <Field
-                      placeholder="Detail (optional)"
-                      accessibilityLabel={`Detail ${index + 1}`}
-                      value={choice.detail}
-                      onChangeText={(detail) =>
-                        setChoice(choice.id, { detail })
-                      }
-                      maxLength={60}
-                    />
-                  </View>
-                  {choices.length > 2 ? (
-                    <IconButton
-                      icon="xmark"
-                      label={`Remove option ${index + 1}`}
-                      iconSize={18}
-                      onPress={() => removeChoice(choice.id)}
-                    />
-                  ) : null}
+        </View>
+        {kind === "choice" ? (
+          <View style={styles.options}>
+            <Text variant="section" accessibilityRole="header">
+              Options
+            </Text>
+            {choices.map((choice, index) => (
+              <View key={choice.id} style={styles.option}>
+                <View style={styles.grow}>
+                  <Field
+                    placeholder="Option"
+                    accessibilityLabel={`Option ${index + 1}`}
+                    value={choice.label}
+                    onChangeText={(label) => setChoice(choice.id, { label })}
+                    maxLength={40}
+                    autoFocus={choice.id === added}
+                  />
                 </View>
-              ))}
-              {issue("choices") ? (
-                <Text variant="caption" color="danger">
-                  {issue("choices")}
-                </Text>
-              ) : null}
-              {choices.length < 8 ? (
-                <Button
-                  title="Add an option"
-                  variant="secondary"
-                  size="small"
-                  icon="plus"
-                  onPress={addChoice}
-                  style={styles.addOption}
-                />
-              ) : null}
-            </View>
-          ) : null}
-          <Button title="Save" onPress={save} />
-        </ScrollView>
-      </KeyboardAvoidingView>
+                <View style={styles.grow}>
+                  <Field
+                    placeholder="Detail"
+                    accessibilityLabel={`Detail ${index + 1}`}
+                    value={choice.detail}
+                    onChangeText={(detail) => setChoice(choice.id, { detail })}
+                    maxLength={60}
+                  />
+                </View>
+                {choices.length > 2 ? (
+                  <IconButton
+                    icon="xmark"
+                    label={`Remove option ${index + 1}`}
+                    onPress={() => removeChoice(choice.id)}
+                  />
+                ) : null}
+              </View>
+            ))}
+            {issue("choices") ? (
+              <Text variant="caption" color="danger">
+                {issue("choices")}
+              </Text>
+            ) : null}
+            {choices.length < 8 ? (
+              <Button
+                title="Add an option"
+                variant="secondary"
+                size="small"
+                icon="plus"
+                onPress={addChoice}
+                style={styles.addOption}
+              />
+            ) : null}
+          </View>
+        ) : null}
+      </Screen>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  sheet: { flex: 1 },
-  content: {
-    width: "100%",
-    maxWidth: size.maxWidth,
-    alignSelf: "center",
-    padding: space.gutter,
-    gap: space.xl,
-  },
+  footer: { flex: 1 },
   heading: { flexDirection: "row", alignItems: "center", gap: space.sm },
   grow: { flex: 1 },
   kinds: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
   group: { gap: space.sm },
   options: { gap: space.md },
   option: { flexDirection: "row", alignItems: "center", gap: space.sm },
-  // Details run longer than labels ("Collingwood, ON").
-  detail: { flex: 1.25 },
   addOption: { alignSelf: "flex-start" },
 });

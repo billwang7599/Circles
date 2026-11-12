@@ -5,9 +5,8 @@ import { radius, size, space, useTheme } from "./theme";
 
 type Props = {
   children: ReactNode;
+  // The screen's one next action, over a hairline above the home indicator.
   footer?: ReactNode;
-  // A footer that floats on the background with no rule above it.
-  bareFooter?: boolean;
   // Content on the raised chalk panel below, as the home screen's events sit.
   sheet?: ReactNode;
   onRefresh?: () => Promise<unknown>;
@@ -18,7 +17,6 @@ type Props = {
 export function Screen({
   children,
   footer,
-  bareFooter = false,
   sheet,
   onRefresh,
   scrollEnabled = true,
@@ -49,8 +47,8 @@ export function Screen({
             paddingBottom: sheet
               ? 0
               : footer
-                ? space.gutter
-                : insets.bottom + space.gutter,
+                ? space.xl
+                : insets.bottom + space.xl,
           },
         ]}
         keyboardShouldPersistTaps="handled"
@@ -88,7 +86,7 @@ export function Screen({
             {
               backgroundColor: colors.background,
               borderTopColor: colors.border,
-              borderTopWidth: bareFooter ? 0 : 1,
+              borderTopWidth: 1,
               paddingBottom: space.md + insets.bottom,
             },
           ]}

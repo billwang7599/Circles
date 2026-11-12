@@ -1,30 +1,21 @@
 import type { AvatarColor } from "@circles/shared";
 import { StyleSheet, Text as RNText, View } from "react-native";
 import { Avatar } from "./Avatar";
-import { font, radius } from "./theme";
+import { font, radius, useTheme } from "./theme";
 
 type Props = {
   members: { id: string; name: string; color: AvatarColor }[];
-  // What the stack sits on, so each avatar's ring cuts it from the one behind.
-  ringColor: string;
-  // Fill and text of the "+N" disc for the members past `max`.
-  moreColor: string;
-  moreTextColor: string;
   size?: number;
   max?: number;
 };
 
-export function AvatarStack({
-  members,
-  ringColor,
-  moreColor,
-  moreTextColor,
-  size = 32,
-  max = 3,
-}: Props) {
+// Overlapping avatars, each ringed in the background colour, and a "+N"
+// disc in ink for the members past `max`.
+export function AvatarStack({ members, size = 32, max = 3 }: Props) {
+  const { colors } = useTheme();
   const shown = members.slice(0, max);
   const more = members.length - shown.length;
-  const overlap = { marginLeft: -size * 0.28 };
+  const overlap = { marginLeft: -size * 0.22 };
   return (
     <View
       style={styles.stack}
@@ -33,13 +24,7 @@ export function AvatarStack({
     >
       {shown.map((member, index) => (
         <View key={member.id} style={index > 0 ? overlap : undefined}>
-          <Avatar
-            name={member.name}
-            color={member.color}
-            size={size}
-            ring
-            ringColor={ringColor}
-          />
+          <Avatar name={member.name} color={member.color} size={size} ring />
         </View>
       ))}
       {more > 0 ? (
@@ -50,8 +35,8 @@ export function AvatarStack({
             {
               width: size,
               height: size,
-              backgroundColor: moreColor,
-              borderColor: ringColor,
+              backgroundColor: colors.foreground,
+              borderColor: colors.background,
               borderWidth: Math.max(1.5, size / 16),
             },
           ]}
@@ -60,7 +45,7 @@ export function AvatarStack({
             allowFontScaling={false}
             style={[
               styles.moreText,
-              { color: moreTextColor, fontSize: Math.round(size * 0.4) },
+              { color: colors.background, fontSize: Math.round(size * 0.4) },
             ]}
           >
             +{more}

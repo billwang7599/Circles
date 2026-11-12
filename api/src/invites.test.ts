@@ -123,8 +123,8 @@ test("the RSVP page shows the event and its preview, and no amount", async () =>
   expect(submits.length).toBeGreaterThan(2);
   expect(submits[0]).toContain('value="in"');
   expect(submits[0]).toContain('class="vh"');
-  expect(html).toContain("Takes about a minute. No app or account needed.");
-  expect(html).toContain('property="og:title" content="Ski trip · Dec – Jan"');
+  expect(html).toContain('id="attending-lbl"');
+  expect(html).toContain('property="og:title" content="Ski trip, Dec – Jan"');
   expect(html).toMatch(
     /property="og:description"\s+content="Can you make it\? Answer in a minute, no app needed\."/,
   );
@@ -157,7 +157,8 @@ test("I'm in takes a name, sets the cookie and asks the questions", async () => 
 
   const html = await (await page(event.slug, cookieOf(sent))).text();
   expect(html).toContain('value="Ben"');
-  expect(html).toContain('aria-pressed="true"');
+  expect(html).toContain("Can't make it after all");
+  expect(html).not.toContain('id="attending-lbl"');
   expect(html).toContain("When are you free?");
   expect(html).toMatch(/name="day"\s+value="2026-12-01"/);
   expect(html).toMatch(/name="day"\s+value="2027-01-31"/);
@@ -280,6 +281,26 @@ test("another amount wins over the ranges and comes back as typed", async () => 
   expect((await stored(event.id, "Ben")).answers).toEqual({
     budget: { kind: "budget", max: null },
   });
+
+  // The name field sits in the same form, so a typo is fixed on the way.
+  await send(
+    event.slug,
+    { answers: "1", budget: "none", name: "Benjamin" },
+    cookie,
+  );
+  expect((await stored(event.id, "Benjamin")).answers).toEqual({
+    budget: { kind: "budget", max: null },
+  });
+  const blank = await send(
+    event.slug,
+    { answers: "1", budget: "none", name: "" },
+    cookie,
+  );
+  expect(blank.status).toBe(400);
+  expect(await blank.text()).toContain("Enter a name");
+  // Backing out from the questions page, with the form's own control.
+  await send(event.slug, { answers: "1", attending: "out" }, cookie);
+  expect((await stored(event.id, "Benjamin")).attending).toBe(false);
 });
 
 test("the confirmation lists only what was given, and sells the app only with a store", async () => {
@@ -431,7 +452,7 @@ test("a name already in is asked whether it is the same person, and That's me ta
   expect(await names()).toEqual(["Alex", "Ben"]);
   expect(await version(event.id)).toBe(4);
   expect(await (await page(event.slug, phone)).text()).toContain(
-    "No app or account needed",
+    'id="attending-lbl"',
   );
 
   // Someone else: a second Ben, with a response of their own.
@@ -476,7 +497,7 @@ test("a name already in is asked whether it is the same person, and That's me ta
   expect(await (await page(event.slug, turned)).text()).toContain("No worries");
   expect(await version(event.id)).toBe(was + 1);
   expect(await (await page(event.slug, chloe)).text()).toContain(
-    "No app or account needed",
+    'id="attending-lbl"',
   );
   expect(await names()).toEqual([
     "Alex",
@@ -496,7 +517,7 @@ test("with no questions, I'm in goes straight to the confirmation", async () => 
   const html = await (await page(event.slug, cookie)).text();
   expect(html).toContain("You're all set!");
   expect(html).not.toContain("Send my answers");
-  expect(html).not.toContain("Change answers");
+  expect(html).not.toContain("Change my answers");
   expect(html).not.toContain("<dt>Budget</dt>");
   expect(html).toContain("Can't make it after all");
   const edit = await (await page(event.slug, cookie, "?edit")).text();
@@ -722,7 +743,7 @@ test("an unknown link is a 404, and a token for another event is no token", asyn
   expect(elsewhere).toContain('placeholder="First name"');
   expect(elsewhere).not.toContain('value="Ben"');
   const stale = await page(b.slug, `response_${b.slug}=${tokenOf(cookie)}`);
-  expect(await stale.text()).toContain("No app or account needed");
+  expect(await stale.text()).toContain('id="attending-lbl"');
 
   // The link with ?g= sets the cookie for its own event, and the page then
   // takes the token out of the address bar.
@@ -821,7 +842,9 @@ test("a signed-in account claims its answers once", async () => {
     { token },
   );
   expect(other.status).toBe(409);
-  expect(await other.json()).toEqual({ error: "Someone else claimed this" });
+  expect(await other.json()).toEqual({
+    error: "This link was already used by someone else",
+  });
   const second = tokenOf(
     cookieOf(await send(event.slug, { name: "Dana again", attending: "in" })),
   );

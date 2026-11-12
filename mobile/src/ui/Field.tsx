@@ -1,5 +1,12 @@
-import { useState, type ReactNode } from "react";
-import { StyleSheet, TextInput, type TextInputProps, View } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  AccessibilityInfo,
+  Platform,
+  StyleSheet,
+  TextInput,
+  type TextInputProps,
+  View,
+} from "react-native";
 import { Text } from "./Text";
 import { radius, size, space, typeScale, useTheme } from "./theme";
 
@@ -9,20 +16,15 @@ type Props = TextInputProps & {
   // A unit shown inside the box ahead of the value, such as "$".
   prefix?: string;
   error?: string;
-  // Sits inside the box under a multiline value.
-  children?: ReactNode;
 };
 
-export function Field({
-  label,
-  prefix,
-  error,
-  style,
-  children,
-  ...input
-}: Props) {
+export function Field({ label, prefix, error, style, ...input }: Props) {
   const { colors } = useTheme();
   const tall = input.multiline === true;
+  // A screen reader hears an error when it appears, not only on reaching it.
+  useEffect(() => {
+    if (error) AccessibilityInfo.announceForAccessibility(error);
+  }, [error]);
   return (
     <View style={styles.field}>
       {label ? <Text variant="label">{label}</Text> : null}
@@ -41,6 +43,15 @@ export function Field({
           <TextInput
             maxFontSizeMultiplier={1.5}
             accessibilityLabel={label ?? input.placeholder}
+            // The caret and selection in ink, like every other control.
+            // Android paints the selection with the colour as given, so
+            // there it is translucent and the text stays readable.
+            selectionColor={
+              Platform.OS === "android"
+                ? `${colors.foreground}55`
+                : colors.foreground
+            }
+            cursorColor={colors.foreground}
             {...input}
             placeholderTextColor={colors.textMuted}
             style={[
@@ -51,7 +62,6 @@ export function Field({
             ]}
           />
         </View>
-        {children}
       </View>
       {error ? (
         <Text variant="caption" color="danger">
@@ -79,7 +89,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: space.lg,
   },
-  tallBox: { paddingTop: space.md, paddingBottom: space.md, gap: space.md },
+  tallBox: { paddingTop: space.md, paddingBottom: space.md },
   value: { flexDirection: "row", alignItems: "center", gap: space.xs },
   input: { flex: 1, minHeight: size.control, ...typeScale.input },
   tallInput: { minHeight: 72, textAlignVertical: "top" },

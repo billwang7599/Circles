@@ -45,7 +45,7 @@ import { Screen } from "../../ui/Screen";
 import { Section } from "../../ui/Section";
 import { Stat } from "../../ui/Stat";
 import { Text } from "../../ui/Text";
-import { eventTone, radius, space, useTheme } from "../../ui/theme";
+import { eventTone, radius, space } from "../../ui/theme";
 
 const allKinds: QuestionKind[] = ["dates", "budget", "choice", "text"];
 
@@ -74,7 +74,6 @@ export default function Event() {
   const removal = useRemoveResponse(eventId);
   const make = useMakeItineraries(eventId);
   const answers = useAnswersLink(eventId);
-  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [detail, setDetail] = useState<Detail>("parts");
   // Closed, or open for a new question or for one to change.
@@ -114,6 +113,7 @@ export default function Event() {
   const questions = pending?.questions ?? view.event.questions;
   const { windowStart, windowEnd } = view.event;
   const ended = hasEnded(windowEnd);
+  const editingTitle = titleDraft !== undefined;
   const inPeople = view.responses.filter((r) => r.attending);
   const answered = inPeople.filter((r) => r.answered).length;
   const days = daysBetween(windowStart, windowEnd) + 1;
@@ -181,6 +181,15 @@ export default function Event() {
     );
   }
 
+  function removeQuestion(question: Question) {
+    confirmDestructive(
+      "Remove question",
+      "Answers to it go too.",
+      "Remove",
+      () => save({ questions: questions.filter((q) => q.id !== question.id) }),
+    );
+  }
+
   function menu() {
     if (Platform.OS !== "ios") return deleteEvent();
     ActionSheetIOS.showActionSheetWithOptions(
@@ -195,41 +204,60 @@ export default function Event() {
     );
   }
 
-  // The one thing to do next, for whoever is looking; nothing once the
-  // window has passed.
-  const footerButton = ended ? null : isOrganizer ? (
-    canMake ? (
+  // What the copy pill says: the link is on the clipboard, or it is not.
+  const copyTitle =
+    copied === "copied"
+      ? "Copied"
+      : copied === "failed"
+        ? "Couldn't copy"
+        : "Copy invite link";
+
+  // The one thing to do next, for whoever is looking: nothing once the
+  // window has passed, and nothing while the title is being edited, so Save
+  // is the screen's one primary. Options read "Update" once answers have
+  // changed under them, and "Make new" when they are current.
+  const footerButton =
+    ended || editingTitle ? null : isOrganizer ? (
+      canMake ? (
+        <Button
+          title={
+            !hasOptions
+              ? "Make itinerary options"
+              : view.stale
+                ? "Update options"
+                : "Make new options"
+          }
+          onPress={() => make.mutate({ detail })}
+          loading={make.isPending}
+        />
+      ) : (
+        <Button
+          title={copyTitle}
+          icon={copied === "copied" ? "check" : "link"}
+          onPress={() => void copy()}
+        />
+      )
+    ) : me && (questions.length > 0 || !me.attending) ? (
       <Button
-        title={hasOptions ? "Update options" : "Make itinerary options"}
-        onPress={() => make.mutate({ detail })}
-        loading={make.isPending}
+        title={answersTitle(me)}
+        onPress={openAnswers}
+        loading={answers.isPending}
       />
-    ) : (
-      <Button
-        title={copied === "copied" ? "Copied" : "Copy invite link"}
-        icon={copied === "copied" ? "check" : "link"}
-        onPress={() => void copy()}
-      />
-    )
-  ) : me ? (
-    <Button
-      title={answersTitle(me)}
-      onPress={openAnswers}
-      loading={answers.isPending}
-    />
-  ) : null;
+    ) : null;
   const footerError = isOrganizer
     ? make.error?.message
     : answers.error?.message;
   // The footer carries Copy invite link until options can be made; the
-  // panel offers it only once the footer has moved on.
-  const copyInFooter = isOrganizer && !canMake && !ended;
+  // panel offers it only once the footer has moved on, or is away.
+  const copyInFooter = isOrganizer && !canMake && !ended && !editingTitle;
+  // Answers to give or change: not once the window has passed, and not
+  // when there is nothing to ask.
+  const askable = !ended && questions.length > 0;
 
   return (
     <Screen
       onRefresh={event.refetch}
       scrollEnabled={!dragging}
-      bareFooter
       footer={
         footerButton ? (
           <View style={styles.footer}>
@@ -241,13 +269,15 @@ export default function Event() {
     >
       <View style={headerStyle}>
         <RoundButton icon="arrow-left" label="Back" onPress={back} />
-        {isOrganizer ? (
-          <View style={styles.headerActions}>
-            <RoundButton
-              icon="pencil"
-              label="Edit title"
-              onPress={() => setTitleDraft(title)}
-            />
+        {isOrganizer && !editingTitle ? (
+          <View style={styles.row}>
+            {ended ? null : (
+              <RoundButton
+                icon="pencil"
+                label="Edit title"
+                onPress={() => setTitleDraft(title)}
+              />
+            )}
             <RoundButton icon="ellipsis" label="More" onPress={menu} />
           </View>
         ) : null}
@@ -257,7 +287,7 @@ export default function Event() {
         <View style={styles.titleBlock}>
           <View style={styles.kicker}>
             <View style={[styles.kickerDot, { backgroundColor: tone.fill }]} />
-            <Text color="textMuted" variant="section">
+            <Text color="textMuted" variant="section" style={styles.grow}>
               {approxRange(windowStart, windowEnd, true)}
             </Text>
             {ended ? (
@@ -266,18 +296,7 @@ export default function Event() {
               </Text>
             ) : null}
           </View>
-          {titleDraft === undefined ? (
-            <Text
-              variant="display"
-              accessibilityRole="header"
-              numberOfLines={3}
-              adjustsFontSizeToFit
-              minimumFontScale={0.6}
-              style={styles.title}
-            >
-              {title}
-            </Text>
-          ) : (
+          {editingTitle ? (
             <View style={styles.titleEdit}>
               <Field
                 accessibilityLabel="Title"
@@ -285,6 +304,8 @@ export default function Event() {
                 onChangeText={setTitleDraft}
                 error={titleError}
                 autoFocus
+                multiline
+                submitBehavior="submit"
                 maxLength={60}
                 returnKeyType="done"
                 onSubmitEditing={saveTitle}
@@ -299,6 +320,16 @@ export default function Event() {
                 />
               </View>
             </View>
+          ) : (
+            <Text
+              variant="display"
+              accessibilityRole="header"
+              numberOfLines={3}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+            >
+              {title}
+            </Text>
           )}
         </View>
         <View style={styles.facts}>
@@ -314,9 +345,6 @@ export default function Event() {
                   name: r.name,
                   color: colorFor(r.name),
                 }))}
-                ringColor={colors.background}
-                moreColor={colors.foreground}
-                moreTextColor={colors.background}
                 size={30}
                 max={4}
               />
@@ -337,16 +365,12 @@ export default function Event() {
       {ended ? null : (
         <Section title="Invite">
           <Card panel style={styles.invite}>
-            <Text
-              numberOfLines={2}
-              color={copyInFooter ? undefined : "textMuted"}
-              style={styles.grow}
-            >
+            <Text numberOfLines={1} ellipsizeMode="middle" style={styles.grow}>
               {url.replace(/^https?:\/\//, "")}
             </Text>
             {copyInFooter ? null : (
               <Button
-                title={copied === "copied" ? "Copied" : "Copy invite link"}
+                title={copyTitle}
                 icon={copied === "copied" ? "check" : undefined}
                 variant="secondary"
                 size="small"
@@ -354,22 +378,15 @@ export default function Event() {
               />
             )}
           </Card>
-          {copied === "failed" ? (
-            <Text variant="caption" color="danger">
-              Couldn&apos;t copy the link
-            </Text>
-          ) : null}
         </Section>
       )}
 
-      {isOrganizer ? (
+      {isOrganizer && !ended ? (
         <Section title="Questions">
           <QuestionList
             questions={questions}
             onEdit={(question) => setEditor({ question })}
-            onRemove={(question) =>
-              save({ questions: questions.filter((q) => q.id !== question.id) })
-            }
+            onRemove={removeQuestion}
             onMove={(from, to) =>
               save({ questions: moveItem(questions, from, to) })
             }
@@ -383,8 +400,9 @@ export default function Event() {
 
       <WhoIsIn
         responses={view.responses}
+        questions={view.event.questions}
         isOrganizer={isOrganizer}
-        onAnswers={ended ? undefined : openAnswers}
+        onAnswers={askable ? openAnswers : undefined}
         answersPending={answers.isPending}
         onRemove={isOrganizer && !ended ? removePerson : undefined}
         error={
@@ -397,7 +415,6 @@ export default function Event() {
       {hasOptions || canMake || !isOrganizer ? (
         <Itineraries
           itineraries={view.itineraries}
-          stale={view.stale}
           detail={canMake ? { value: detail, onChange: setDetail } : undefined}
           tone={tone}
         />
@@ -428,24 +445,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  headerActions: { flexDirection: "row", gap: space.sm },
   hero: { gap: space.xl },
   // The kicker keeps its own gap from the title.
   titleBlock: { gap: space.md },
   kicker: { flexDirection: "row", alignItems: "center", gap: space.sm },
   kickerDot: { width: 12, height: 12, borderRadius: radius.full },
-  // Display's line height sits under its size; a wrapped title needs room.
-  title: { lineHeight: 56 },
   titleEdit: { gap: space.sm },
   row: { flexDirection: "row", gap: space.sm },
   facts: { gap: space.md },
   heroMeta: { flexDirection: "row", alignItems: "flex-end", gap: space.xl },
   grow: { flex: 1 },
-  invite: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.md,
-    paddingVertical: space.lg,
-  },
+  invite: { flexDirection: "row", alignItems: "center", gap: space.md },
   footer: { flex: 1, gap: space.sm },
 });

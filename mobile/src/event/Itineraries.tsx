@@ -6,6 +6,7 @@ import {
   type ItineraryDay,
   type ItineraryItem,
 } from "@circles/shared";
+import { Fragment } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -26,6 +27,7 @@ import { Stat } from "../ui/Stat";
 import { Text } from "../ui/Text";
 import {
   radius,
+  size,
   space,
   typeScale,
   useTheme,
@@ -100,7 +102,6 @@ function placeOf(item: ItineraryItem, previous: string | null) {
 
 type Props = {
   itineraries: Itinerary[];
-  stale: boolean;
   // The organizer's choice of how full each day is, ahead of making them;
   // left out when they cannot be made yet.
   detail?: { value: Detail; onChange: (detail: Detail) => void };
@@ -108,19 +109,10 @@ type Props = {
   tone: EventTone;
 };
 
-export function Itineraries({ itineraries, stale, detail, tone }: Props) {
+export function Itineraries({ itineraries, detail, tone }: Props) {
   const options = [...itineraries].sort((a, b) => a.rank - b.rank);
   return (
-    <Section
-      title="Itinerary"
-      action={
-        stale && options.length ? (
-          <Text variant="caption" color="textMuted">
-            Changed since these were made
-          </Text>
-        ) : undefined
-      }
-    >
+    <Section title="Itinerary">
       {detail ? (
         <View style={styles.detail}>
           <Text variant="label">Detail</Text>
@@ -128,6 +120,7 @@ export function Itineraries({ itineraries, stale, detail, tone }: Props) {
             options={DETAILS}
             value={detail.value}
             onChange={detail.onChange}
+            label="Detail"
           />
         </View>
       ) : null}
@@ -168,13 +161,19 @@ function ItineraryCard({
             {dayRange(itinerary.start, itinerary.end)}
           </Text>
         </View>
-        <View style={styles.stat}>
-          {everyone ? (
-            <Stat value={days} label={days === 1 ? "day" : "days"} />
-          ) : (
-            <Stat value={`${itinerary.free}/${itinerary.of}`} label="free" />
-          )}
-        </View>
+        {everyone ? (
+          <Stat
+            value={days}
+            label={days === 1 ? "day" : "days"}
+            align="right"
+          />
+        ) : (
+          <Stat
+            value={`${itinerary.free}/${itinerary.of}`}
+            label="free"
+            align="right"
+          />
+        )}
       </View>
       <View style={[styles.rule, { backgroundColor: colors.border }]} />
       {itinerary.picks.length || itinerary.overBudget ? (
@@ -184,7 +183,7 @@ function ItineraryCard({
               key={pick}
               style={[styles.chip, { backgroundColor: tone.fill }]}
             >
-              <Text variant="label" style={{ color: tone.ink }}>
+              <Text variant="button" style={{ color: tone.ink }}>
                 {pick}
               </Text>
             </View>
@@ -197,7 +196,7 @@ function ItineraryCard({
                 { borderColor: colors.danger },
               ]}
             >
-              <Text variant="label" color="danger">
+              <Text variant="button" color="danger">
                 {"Over the group's budget"}
               </Text>
             </View>
@@ -206,114 +205,112 @@ function ItineraryCard({
       ) : null}
       {summary ? <Text>{summary}</Text> : null}
       {itinerary.daysPending ? (
-        <View style={styles.day}>
+        <>
           <View style={[styles.rule, { backgroundColor: colors.border }]} />
           <ActivityIndicator
             color={colors.textMuted}
             accessibilityLabel="Writing the days"
             style={styles.writing}
           />
-        </View>
+        </>
       ) : null}
       {itinerary.days.map((day) => {
         const note = dayNote(day);
         return (
-          <View key={day.date} style={styles.day}>
+          <Fragment key={day.date}>
             <View style={[styles.rule, { backgroundColor: colors.border }]} />
-            <View style={styles.dayHead}>
-              <Text variant="label">{formatDay(day.date)}</Text>
-              {note ? (
-                <Text color="textMuted" numberOfLines={1} style={styles.shrink}>
-                  {note}
-                </Text>
-              ) : null}
-            </View>
-            {day.items.map((item, index) => {
-              const place = placeOf(
-                item,
-                index > 0 ? day.items[index - 1]!.place : null,
-              );
-              const last = index === day.items.length - 1;
-              return (
-                <View key={index} style={styles.item}>
-                  {hours ? (
-                    <Text
-                      color="textMuted"
-                      style={[styles.time, { width: 48 * scale }]}
-                      accessibilityElementsHidden
-                      importantForAccessibility="no-hide-descendants"
-                    >
-                      {item.when}
-                    </Text>
-                  ) : null}
-                  <View style={styles.rail}>
-                    <View style={[styles.node, { height: line }]}>
-                      {hours ? (
+            <View style={styles.day}>
+              <View style={styles.dayHead}>
+                <Text variant="label">{formatDay(day.date)}</Text>
+                {note ? (
+                  <Text
+                    color="textMuted"
+                    numberOfLines={1}
+                    style={styles.shrink}
+                  >
+                    {note}
+                  </Text>
+                ) : null}
+              </View>
+              {day.items.map((item, index) => {
+                const place = placeOf(
+                  item,
+                  index > 0 ? day.items[index - 1]!.place : null,
+                );
+                const last = index === day.items.length - 1;
+                return (
+                  <View key={index} style={styles.item}>
+                    {hours ? (
+                      <Text
+                        color="textMuted"
+                        style={[styles.time, { width: 48 * scale }]}
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
+                      >
+                        {item.when}
+                      </Text>
+                    ) : null}
+                    <View style={styles.rail}>
+                      <View style={[styles.node, { height: line }]}>
+                        {hours ? (
+                          <View
+                            style={[
+                              styles.dot,
+                              { backgroundColor: colors.foreground },
+                            ]}
+                          />
+                        ) : (
+                          <Icon
+                            name={partMarks[item.when] ?? "sun"}
+                            size={16}
+                            color={colors.foreground}
+                          />
+                        )}
+                      </View>
+                      {last ? null : (
                         <View
                           style={[
-                            styles.dot,
-                            { backgroundColor: colors.foreground },
+                            styles.connector,
+                            { backgroundColor: colors.border },
                           ]}
-                        />
-                      ) : (
-                        <Icon
-                          name={partMarks[item.when] ?? "sun"}
-                          size={16}
-                          color={colors.foreground}
                         />
                       )}
                     </View>
-                    {last ? null : (
-                      <View
-                        style={[
-                          styles.connector,
-                          { backgroundColor: colors.border },
-                        ]}
-                      />
-                    )}
+                    <View style={[styles.grow, last ? null : styles.itemGap]}>
+                      <Text accessibilityLabel={`${item.when}. ${item.text}`}>
+                        {item.text}
+                      </Text>
+                      {place ? (
+                        <Pressable
+                          accessibilityRole="link"
+                          accessibilityLabel={`${place}, open in Maps`}
+                          // Reaches 44 pt without crossing into the line above.
+                          hitSlop={{ top: 6, bottom: 16, left: 8, right: 8 }}
+                          onPress={() => void Linking.openURL(mapsUrl(place))}
+                          style={({ pressed }) => [
+                            styles.place,
+                            { opacity: pressed ? 0.7 : 1 },
+                          ]}
+                        >
+                          <View style={[styles.pin, { height: line }]}>
+                            <Icon
+                              name="map-pin"
+                              size={14}
+                              color={colors.foreground}
+                            />
+                          </View>
+                          <Text style={styles.shrink}>{place}</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
                   </View>
-                  <View style={[styles.grow, last ? null : styles.itemGap]}>
-                    <Text accessibilityLabel={`${item.when}. ${item.text}`}>
-                      {item.text}
-                    </Text>
-                    {place ? (
-                      <Pressable
-                        accessibilityRole="link"
-                        accessibilityLabel={`${place}, open in Maps`}
-                        hitSlop={space.xs}
-                        onPress={() => void Linking.openURL(mapsUrl(place))}
-                        style={({ pressed }) => [
-                          styles.place,
-                          { opacity: pressed ? 0.7 : 1 },
-                        ]}
-                      >
-                        <View style={styles.pin}>
-                          <Icon
-                            name="map-pin"
-                            size={14}
-                            color={colors.foreground}
-                          />
-                        </View>
-                        <Text style={styles.shrink}>{place}</Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
+                );
+              })}
+            </View>
+          </Fragment>
         );
       })}
       <View style={styles.bottom}>
-        <View
-          style={styles.people}
-          accessible
-          accessibilityLabel={`${itinerary.free} of ${itinerary.of} can make it`}
-        >
-          <Icon name="people" size={16} color={colors.textMuted} />
-          <Text color="textMuted">{itinerary.free}</Text>
-        </View>
-        <View style={styles.grow} />
         <Button
           title="Share"
           variant="secondary"
@@ -332,15 +329,17 @@ const styles = StyleSheet.create({
   top: { flexDirection: "row", alignItems: "flex-start", gap: space.md },
   grow: { flex: 1 },
   shrink: { flexShrink: 1 },
-  stat: { alignItems: "flex-end" },
+  // A hairline between the card's parts, with the card's gap on both sides.
   rule: { height: 1 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+  // A pick is a chip in the event's tone, the chips' own height and type.
   chip: {
+    minHeight: size.small,
+    justifyContent: "center",
     borderRadius: radius.full,
-    paddingHorizontal: space.md,
-    paddingVertical: space.xs,
+    paddingHorizontal: space.lg,
   },
-  outlined: { borderWidth: 1.2, paddingVertical: space.xs - 1.2 },
+  outlined: { borderWidth: 1.2 },
   day: { gap: space.md },
   // Where the days will go, while the server is still writing them.
   writing: { alignSelf: "flex-start", paddingVertical: space.sm },
@@ -360,7 +359,7 @@ const styles = StyleSheet.create({
   connector: { flex: 1, width: 1 },
   dot: { width: 6, height: 6, borderRadius: radius.full },
   // The pin is the affordance; the place reads as part of the line, and the
-  // pin stays on the first line when the name wraps.
+  // pin stays centred on the first line when the name wraps.
   place: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -368,8 +367,6 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     marginTop: space.xs,
   },
-  pin: { paddingTop: 3 },
-  bottom: { flexDirection: "row", alignItems: "center", gap: space.sm },
-  // Who can make it, as the home tiles count people: a glyph and a number.
-  people: { flexDirection: "row", alignItems: "center", gap: space.inline },
+  pin: { justifyContent: "center" },
+  bottom: { flexDirection: "row", justifyContent: "flex-end" },
 });

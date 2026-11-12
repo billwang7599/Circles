@@ -9,7 +9,7 @@ import {
 } from "@circles/shared";
 import { router, Stack } from "expo-router";
 import { useRef, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { useCreateEvent, useReadDates } from "../../api";
 import { deviceTimezone, todayKey } from "../../dates";
 import { DateRangePicker } from "../../event/DateRangePicker";
@@ -19,15 +19,16 @@ import { Chip } from "../../ui/Chip";
 import { Field, useIssues } from "../../ui/Field";
 import { IconButton } from "../../ui/IconButton";
 import { Screen } from "../../ui/Screen";
-import { MetaItem, ScreenTitle } from "../../ui/ScreenTitle";
+import { ScreenTitle } from "../../ui/ScreenTitle";
 import { Section } from "../../ui/Section";
 import { Text } from "../../ui/Text";
-import { space } from "../../ui/theme";
+import { space, useTheme } from "../../ui/theme";
 
 // Where the range came from, so the matching chip lights up.
 type Source = { kind: "preset"; preset: Preset } | { kind: "text" | "pick" };
 
 export default function NewEvent() {
+  const { colors } = useTheme();
   const readDates = useReadDates();
   const create = useCreateEvent();
   const [description, setDescription] = useState("");
@@ -63,7 +64,7 @@ export default function NewEvent() {
     const text = whenText.trim();
     if (!text || text === lastRead.current) return;
     lastRead.current = text;
-    const parsed = ReadDates.safeParse({ text, today });
+    const parsed = ReadDates.safeParse({ text, today, timezone });
     setWhenError(parsed.success ? undefined : parsed.error.issues[0]?.message);
     if (!parsed.success) return;
     readDates.mutate(parsed.data, {
@@ -93,6 +94,15 @@ export default function NewEvent() {
   const ready = description.trim().length > 0 && window !== undefined;
   const dateError = whenError ?? readDates.error?.message;
   const rangeError = issue("windowStart") ?? issue("windowEnd");
+  // The chosen range sits on the heading's row; while typed words are
+  // being read, a spinner holds its place.
+  const chosen = readDates.isPending ? (
+    <ActivityIndicator color={colors.textMuted} />
+  ) : window ? (
+    <Text numberOfLines={1} style={styles.chosen}>
+      {exactRange(window.windowStart, window.windowEnd)}
+    </Text>
+  ) : undefined;
 
   return (
     <Screen
@@ -104,7 +114,7 @@ export default function NewEvent() {
           <Button
             title="Create event"
             onPress={submit}
-            disabled={!ready}
+            disabled={!ready || readDates.isPending}
             loading={create.isPending}
           />
         </View>
@@ -126,12 +136,8 @@ export default function NewEvent() {
         maxLength={300}
         placeholder="Ski trip with Ben and Chloe, somewhere we can drive to"
         error={issue("description")}
-      >
-        <Text variant="caption" color="textMuted">
-          Circles AI reads this to pick your questions
-        </Text>
-      </Field>
-      <Section title="When">
+      />
+      <Section title="When" action={chosen}>
         <View style={styles.chips}>
           {Preset.options.map((preset) => (
             <Chip
@@ -165,12 +171,6 @@ export default function NewEvent() {
           placeholder="December or January"
           error={dateError}
         />
-        {window ? (
-          <MetaItem
-            icon="calendar"
-            text={exactRange(window.windowStart, window.windowEnd)}
-          />
-        ) : null}
         {rangeError ? (
           <Text variant="caption" color="danger">
             {rangeError}
@@ -184,4 +184,6 @@ export default function NewEvent() {
 const styles = StyleSheet.create({
   footer: { flex: 1, gap: space.sm },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+  // The range gives way before the heading does at large text sizes.
+  chosen: { flexShrink: 1 },
 });

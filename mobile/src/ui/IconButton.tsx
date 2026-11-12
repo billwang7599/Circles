@@ -6,11 +6,10 @@ type Props = {
   icon: IconName;
   label: string;
   onPress: () => void;
-  iconSize?: number;
 };
 
-// A bare glyph in a 44 pt hit area.
-export function IconButton({ icon, label, onPress, iconSize = 20 }: Props) {
+// A bare 20 pt glyph in a 44 pt hit area.
+export function IconButton({ icon, label, onPress }: Props) {
   const { colors } = useTheme();
   return (
     <Pressable
@@ -19,7 +18,7 @@ export function IconButton({ icon, label, onPress, iconSize = 20 }: Props) {
       onPress={onPress}
       style={({ pressed }) => [styles.button, { opacity: pressed ? 0.7 : 1 }]}
     >
-      <Icon name={icon} size={iconSize} color={colors.foreground} />
+      <Icon name={icon} size={20} color={colors.foreground} />
     </Pressable>
   );
 }
