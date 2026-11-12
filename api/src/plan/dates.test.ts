@@ -3,9 +3,11 @@ import { expect, test } from "vitest";
 import { scriptedModel } from "../testModel.ts";
 import {
   fakeDates,
+  holidayWindow,
   readDates,
   resolveDates,
   type DatesModel,
+  type Holiday,
 } from "./dates.ts";
 
 // A Monday.
@@ -38,6 +40,8 @@ type Parts = Parameters<typeof resolveDates>[0];
 test("years, whole months and single days are code's to fill in", () => {
   const none: Parts = {
     preset: null,
+    holiday: null,
+    longWeekend: false,
     startMonth: null,
     startDay: null,
     endMonth: null,
@@ -91,6 +95,67 @@ test("years, whole months and single days are code's to fill in", () => {
     "day 30 is not in month 2",
   );
   expect(problem({ startMonth: 1, endMonth: 6 })).toMatch(/at most 90 days/);
+});
+
+test("named holidays are Canada's and code's to date, with the weekend around them when asked", () => {
+  const h = (holiday: Holiday, longWeekend: boolean, from: string) => {
+    const w = holidayWindow(holiday, longWeekend, from);
+    return `${w.windowStart} ${w.windowEnd}`;
+  };
+  expect(h("thanksgiving", false, "2027-09-01")).toBe("2027-10-11 2027-10-11");
+  expect(h("thanksgiving", true, "2027-09-01")).toBe("2027-10-09 2027-10-11");
+  expect(h("victoriaDay", true, "2027-05-04")).toBe("2027-05-22 2027-05-24");
+  expect(h("labourDay", true, "2027-07-13")).toBe("2027-09-04 2027-09-06");
+  expect(h("familyDay", true, "2027-01-20")).toBe("2027-02-13 2027-02-15");
+  // Halloween 2027 is a Sunday, so that weekend; Canada Day 2027 is a
+  // Thursday, so the weekend after.
+  expect(h("halloween", true, "2027-09-01")).toBe("2027-10-30 2027-10-31");
+  expect(h("canadaDay", true, "2027-05-04")).toBe("2027-07-03 2027-07-04");
+  expect(h("canadaDay", false, "2027-05-04")).toBe("2027-07-01 2027-07-01");
+  // One that has passed is next year's.
+  expect(h("newYearsEve", false, "2027-01-20")).toBe("2027-12-31 2027-12-31");
+  expect(h("familyDay", true, "2027-03-02")).toBe("2028-02-19 2028-02-21");
+  // In an answer, a holiday wins over months and days.
+  expect(
+    resolveDates(
+      {
+        preset: null,
+        holiday: "boxingDay",
+        longWeekend: false,
+        startMonth: 5,
+        startDay: null,
+        endMonth: null,
+        endDay: null,
+      },
+      today,
+    ),
+  ).toEqual({ value: { windowStart: "2026-12-26", windowEnd: "2026-12-26" } });
+});
+
+test("a long weekend under way keeps what is left of it, and in January a December day was last month", () => {
+  const h = (holiday: Holiday, longWeekend: boolean, from: string) => {
+    const w = holidayWindow(holiday, longWeekend, from);
+    return `${w.windowStart} ${w.windowEnd}`;
+  };
+  expect(h("thanksgiving", true, "2027-10-10")).toBe("2027-10-10 2027-10-11");
+  expect(h("christmas", true, "2026-12-27")).toBe("2026-12-27 2026-12-27");
+  const parts: Parts = {
+    preset: null,
+    holiday: null,
+    longWeekend: false,
+    startMonth: 12,
+    startDay: 28,
+    endMonth: null,
+    endDay: null,
+  };
+  // Eight days ago, for the route to point out; not next December.
+  expect(resolveDates(parts, "2027-01-05")).toEqual({
+    value: { windowStart: "2026-12-28", windowEnd: "2026-12-28" },
+  });
+  // Three months ago is next time round.
+  expect(resolveDates(parts, "2027-03-20")).toEqual({
+    value: { windowStart: "2027-12-28", windowEnd: "2027-12-28" },
+  });
 });
 
 test("a rejected answer is asked again with the problem; three bad ones read as nothing", async () => {

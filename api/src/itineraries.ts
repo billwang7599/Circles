@@ -19,6 +19,7 @@ import {
   type ItineraryFacts,
   type ItineraryModel,
 } from "./plan/itinerary.ts";
+import type { Places } from "./plan/places.ts";
 
 // An event's itinerary options, best first.
 export async function loadItineraries(
@@ -46,7 +47,11 @@ export async function settlePendingDays(db: Db) {
   );
 }
 
-export function itineraries(db: Db, model: ItineraryModel) {
+// A problem quotes the model's text: a venue, an item, an option's title or
+// area. The log keeps the rule and loses the quote.
+const unquoted = (text: string) => text.replaceAll(/"[^"]*"/g, '"…"');
+
+export function itineraries(db: Db, model: ItineraryModel, places: Places) {
   const app = new Hono<AppEnv>();
 
   // Makes the options and puts them in place of the event's old ones,
@@ -70,8 +75,8 @@ export function itineraries(db: Db, model: ItineraryModel) {
         inputTokens: made.inputTokens,
         outputTokens: made.outputTokens,
         ms: made.ms,
-        error: made.error,
-        problems: made.problems,
+        error: made.error && unquoted(made.error),
+        problems: made.problems?.map(unquoted),
       });
       const ids = await db.transaction(async (tx) => {
         await tx.query("delete from itineraries where event_id = $1", [
@@ -82,7 +87,9 @@ export function itineraries(db: Db, model: ItineraryModel) {
           const [row] = await tx.query<{ id: string }>(
             `insert into itineraries (event_id, rank, body)
              values ($1, $2, $3::jsonb) returning id`,
-            [eventId, i + 1, JSON.stringify(itinerary)],
+            // The area only steers the days, written next; the card
+            // itself does without it.
+            [eventId, i + 1, JSON.stringify({ ...itinerary, area: undefined })],
           );
           ids.push(row!.id);
         }
@@ -98,19 +105,30 @@ export function itineraries(db: Db, model: ItineraryModel) {
           // Whatever becomes of the days, the card stops waiting for them.
           let patch: Record<string, unknown> = { daysPending: false };
           try {
-            const written = await writeDays(model.days, facts, itinerary);
+            const written = await writeDays(
+              model.days,
+              places,
+              facts,
+              itinerary,
+            );
+            // Of the venues, only the counts and a lookup failure: never
+            // their names, and the rejected answers with their quotes cut.
             log({
               call: "itinerary-days",
               model: model.days.model,
+              places: places.source,
               rank: i + 1,
               days: written.days.length,
+              venuesKept: written.venues.kept,
+              venuesDropped: written.venues.dropped.length,
+              venuesError: written.venues.error,
               attempt: written.attempt,
               stopReason: written.stopReason,
               inputTokens: written.inputTokens,
               outputTokens: written.outputTokens,
               ms: written.ms,
-              error: written.error,
-              problems: written.problems,
+              error: written.error && unquoted(written.error),
+              problems: written.problems?.map(unquoted),
             });
             patch = { days: written.days, daysPending: false };
           } catch (err) {

@@ -212,6 +212,7 @@ test("itineraries are made from the answers, stored ranked and stamped with the 
   );
   expect(rows).toHaveLength(1);
   expect(Object.keys(rows[0]!.body)).not.toContain("costPerPerson");
+  expect(Object.keys(rows[0]!.body)).not.toContain("area");
   expect(JSON.stringify(rows)).not.toMatch(/\$|cost|\b450\b|\b600\b/i);
   expect(await eventState(eventId)).toEqual({
     version: 4,
@@ -341,6 +342,69 @@ test("an option whose days cannot be written stops waiting for them", async () =
     expect((await post(eventId, organizer.token)).status).toBe(202);
     const made = await written(eventId, (made) => expect(made).toHaveLength(3));
     expect(made.every((i) => i.days.length === 0)).toBe(true);
+  } finally {
+    daysFn = fake.days.fn;
+  }
+});
+
+test("a venue the map does not know in the area is dropped from the saved days; its text stays", async () => {
+  const { organizer, eventId } = await setUp(
+    ["Ben", true, answers(null, "tremblant")],
+    ["Chloe", true, answers(null, "blue")],
+  );
+  // The fake map knows resorts, parks and markets, and nothing else.
+  daysFn = async ({ option }) => ({
+    output: {
+      days: Array.from({ length: option.days }, (_, d) => ({
+        title: `Day ${d + 1}`,
+        items: [
+          { when: "Morning", text: "Lifts open", place: "Tremblant Resort" },
+          {
+            when: "Evening",
+            text: "Fondue in the village",
+            place: "Chez Nulle Part",
+          },
+        ],
+      })),
+    },
+    stopReason: "end_turn",
+    inputTokens: 0,
+    outputTokens: 0,
+  });
+  try {
+    expect((await post(eventId, organizer.token)).status).toBe(202);
+    const made = await written(eventId, (made) => expect(made).toHaveLength(3));
+    const items = made.flatMap((i) => i.days.flatMap((d) => d.items));
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.filter((i) => i.when === "Morning")).toEqual(
+      items
+        .filter((i) => i.when === "Morning")
+        .map(() => ({
+          when: "Morning",
+          text: "Lifts open",
+          place: "Tremblant Resort",
+        })),
+    );
+    expect(items.filter((i) => i.when === "Evening")).toEqual(
+      items
+        .filter((i) => i.when === "Evening")
+        .map(() => ({
+          when: "Evening",
+          text: "Fondue in the village",
+          place: null,
+        })),
+    );
+    // The lookups went through the cache, under the fake's own name.
+    expect(
+      await db.query(
+        "select source, area, name from venue_lookups where name in ('chez nulle part', 'tremblant resort') order by area, name",
+      ),
+    ).toEqual([
+      { source: "fake", area: "blue mountain", name: "chez nulle part" },
+      { source: "fake", area: "blue mountain", name: "tremblant resort" },
+      { source: "fake", area: "mont tremblant", name: "chez nulle part" },
+      { source: "fake", area: "mont tremblant", name: "tremblant resort" },
+    ]);
   } finally {
     daysFn = fake.days.fn;
   }

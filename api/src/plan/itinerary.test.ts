@@ -1,4 +1,4 @@
-import type { Answers, Question } from "@circles/shared";
+import type { Answers, ItineraryDay, Question } from "@circles/shared";
 import { expect, test } from "vitest";
 import { scriptedModel, skiTrip } from "../testModel.ts";
 import {
@@ -13,6 +13,7 @@ import {
   itineraryInput,
   makeItineraries,
   mentionsMoney,
+  verifyPlaces,
   writeDays,
   type DaysOutput,
   type ItineraryBody,
@@ -21,6 +22,7 @@ import {
   type ItineraryOutput,
   type Slot,
 } from "./itinerary.ts";
+import { fakePlaces, type Places, type Venue } from "./places.ts";
 
 // A Friday to the Sunday of the next week.
 const window = { windowStart: "2026-12-04", windowEnd: "2026-12-13" };
@@ -223,16 +225,19 @@ test("the prompt carries no budget, cap, name or free text", () => {
     "windowEnd",
     "windowStart",
   ]);
+  // A slot says how many can make it, never who.
   expect(Object.keys(input.slots[0]!).sort()).toEqual([
     "days",
     "end",
+    "free",
     "id",
     "start",
+    "weekdays",
   ]);
   // The model is handed the input as JSON.
   const prompt = JSON.stringify(input, null, 2);
   expect(prompt).not.toMatch(/budget|cap|price|\$|\b450\b|\b600\b/i);
-  expect(prompt).not.toMatch(/free|skis|Chloe's|Ben's/);
+  expect(prompt).not.toMatch(/skis|Chloe's|Ben's/);
 });
 
 const [s1, s2, , s4] = facts.slots as [Slot, Slot, Slot, Slot];
@@ -246,8 +251,10 @@ const option = (
   slotId: slot.id,
   choiceIds,
   title,
-  summary: "Everyone is free and it is the closest hill.",
+  summary: "The closest hill, and the snow is best then.",
   costPerPerson,
+  // The resort it goes with, as the prompt asks.
+  area: choiceIds.includes("tremblant") ? "Mont Tremblant" : "Blue Mountain",
 });
 
 const good: ItineraryOutput = {
@@ -292,9 +299,40 @@ test.each([
     message: /1 to 60 characters/,
   },
   {
+    problem: "a day word the dates cannot bear",
+    output: { options: [{ ...first, title: "Weeknight at Tremblant" }] },
+    message: /weeknight, but Dec 5 – 6 falls on the weekend/,
+  },
+  {
+    problem: "a claim that everyone can make a slot some cannot",
+    output: {
+      options: [
+        {
+          ...option(
+            facts.slots.find((s) => s.free < 3)!,
+            "Some of us",
+            100,
+          ),
+          summary: "Everyone is free for it.",
+        },
+      ],
+    },
+    message: /says everyone can make it, but [12] of 3/,
+  },
+  {
+    problem: "a weekday the slot does not touch",
+    output: { options: [{ ...first, summary: "Up early on Friday." }] },
+    message: /Friday, but Dec 5 – 6 is Sunday and Saturday/,
+  },
+  {
     problem: "a negative cost",
     output: { options: [{ ...first, costPerPerson: -5 }] },
     message: /0 or more/,
+  },
+  {
+    problem: "an area nothing names",
+    output: { options: [{ ...first, area: "Los Angeles" }] },
+    message: /not a place the description or its choices name/,
   },
   {
     problem: "the wrong shape",
@@ -347,6 +385,7 @@ const weekend: ItineraryBody = {
   start: "2026-12-05",
   end: "2026-12-06",
   picks: ["Mont Tremblant"],
+  area: "Mont Tremblant",
   detail: "parts",
   days: [],
   daysPending: true,
@@ -366,6 +405,12 @@ const day = (title: string): DaysOutput["days"][number] => ({
 const goodDays: DaysOutput = { days: [day("Getting there"), day("Last runs")] };
 const one = goodDays.days[0]!;
 
+// A map on which every venue exists wherever it is asked about.
+const everywhere: Places = {
+  source: "everywhere",
+  search: async (name, area) => [{ name, address: area }],
+};
+
 test("the days prompt carries the option as its card reads and nothing about money, people or who is free", () => {
   const input = daysInput(facts, { ...weekend, overBudget: true });
   expect(input).toEqual({
@@ -379,6 +424,7 @@ test("the days prompt carries the option as its card reads and nothing about mon
       end: "2026-12-06",
       days: 2,
       picks: [{ label: "Mont Tremblant", detail: "Laurentians, QC" }],
+      area: "Mont Tremblant",
     },
     detail: "parts",
   });
@@ -434,6 +480,21 @@ test.each([
     message: /mention money/,
   },
   {
+    problem: "filler",
+    output: {
+      days: [
+        one,
+        {
+          ...one,
+          items: [
+            { when: "Morning", text: "Rest and freshen up", place: null },
+          ],
+        },
+      ],
+    },
+    message: /is filler/,
+  },
+  {
     problem: "the wrong shape",
     output: { options: [] },
     message: /object with days/,
@@ -442,7 +503,7 @@ test.each([
   "in the days, $problem is rejected and the model is asked again",
   async ({ output, message }) => {
     const scripted = scriptedModel([output, goodDays]);
-    const written = await writeDays(scripted.model, facts, weekend);
+    const written = await writeDays(scripted.model, everywhere, facts, weekend);
     expect(written).toMatchObject({
       attempt: 2,
       inputTokens: 20,
@@ -461,6 +522,344 @@ test.each([
   },
 );
 
+test("with no area, a venue is rejected and the days are asked again without one", async () => {
+  const bare: DaysOutput = {
+    days: goodDays.days.map((d) => ({
+      ...d,
+      items: d.items.map((item) => ({ ...item, place: null })),
+    })),
+  };
+  const scripted = scriptedModel([goodDays, bare]);
+  const written = await writeDays(scripted.model, everywhere, facts, {
+    ...weekend,
+    area: null,
+  });
+  expect(written.attempt).toBe(2);
+  expect(scripted.rejections[1]![0]).toMatch(/place must be null/);
+  expect(
+    written.days.flatMap((d) => d.items).every((i) => i.place === null),
+  ).toBe(true);
+});
+
+// A ramen crawl's days as the model wrote them, venues and all.
+const crawl: ItineraryDay[] = [
+  {
+    date: "2026-11-16",
+    title: "West to east",
+    items: [
+      { when: "Morning", text: "Half bowls to start", place: "Kinton Ramen" },
+      {
+        when: "Afternoon",
+        text: "Browse the stalls",
+        place: "St. Lawrence Market",
+      },
+      { when: "Evening", text: "Tonkotsu to finish", place: "Ippudo" },
+    ],
+  },
+  {
+    date: "2026-11-17",
+    title: "Back for more",
+    items: [
+      { when: "Morning", text: "The shio this time", place: "kinton ramen" },
+      {
+        when: "Afternoon",
+        text: "Dumplings between bowls",
+        place: "Chinatown Dumpling House",
+      },
+      { when: "Evening", text: "Last stop", place: "Sansotei Ramen" },
+    ],
+  },
+  {
+    date: "2026-11-18",
+    title: "Uptown",
+    items: [
+      { when: "Morning", text: "Shio with a twist", place: "Santouka Ramen" },
+      { when: "Afternoon", text: "Chicken paitan", place: "Marutama Ramen" },
+      { when: "Evening", text: "One for the road", place: "Ramen Alley" },
+    ],
+  },
+];
+
+test("a venue stays only where the map finds one of that name in the area, looked up once each", async () => {
+  const toronto = "Toronto, ON, Canada Toronto Ontario ON";
+  const found: Record<string, Venue[]> = {
+    // A branch name on the end.
+    "Kinton Ramen": [
+      { name: "KINTON RAMEN Baldwin", address: `51 Baldwin St, ${toronto}` },
+    ],
+    "St. Lawrence Market": [
+      { name: "St Lawrence Market", address: `93 Front St E, ${toronto}` },
+    ],
+    // Exists, in another city.
+    Ippudo: [
+      {
+        name: "Ippudo",
+        address: "65 4th Ave, New York, NY 10003, USA New York",
+      },
+    ],
+    // The neighbourhood, not a venue in it.
+    "Chinatown Dumpling House": [
+      { name: "Chinatown", address: `Chinatown, ${toronto}` },
+    ],
+    // Something else nearby.
+    "Sansotei Ramen": [
+      { name: "Ramen Isshin", address: `421 College St, ${toronto}` },
+    ],
+    // The same words in another order.
+    "Santouka Ramen": [
+      {
+        name: "Hokkaido Ramen Santouka",
+        address: `91 Dundas St E, ${toronto}`,
+      },
+    ],
+    // A hyphen.
+    "Marutama Ramen": [
+      { name: "Marutama Ra-men", address: `4 Bloor St W, ${toronto}` },
+    ],
+    // Nothing of that name, only other ramen shops.
+    "Ramen Alley": [
+      { name: "Ramen Isshin", address: `421 College St, ${toronto}` },
+      { name: "The Self Ramen Bar", address: `233 College St, ${toronto}` },
+    ],
+  };
+  const asked: string[] = [];
+  const places: Places = {
+    source: "scripted",
+    async search(name, area) {
+      asked.push(name);
+      expect(area).toBe("Toronto");
+      return found[name] ?? [];
+    },
+  };
+  const { days, venues } = await verifyPlaces(places, "Toronto", crawl);
+  expect(asked.sort()).toEqual([
+    "Chinatown Dumpling House",
+    "Ippudo",
+    "Kinton Ramen",
+    "Marutama Ramen",
+    "Ramen Alley",
+    "Sansotei Ramen",
+    "Santouka Ramen",
+    "St. Lawrence Market",
+  ]);
+  expect(days.map((d) => d.items.map((i) => i.place))).toEqual([
+    ["Kinton Ramen", "St. Lawrence Market", null],
+    ["kinton ramen", null, null],
+    ["Santouka Ramen", "Marutama Ramen", null],
+  ]);
+  expect(venues).toEqual({
+    kept: 5,
+    dropped: [
+      "Ippudo",
+      "Chinatown Dumpling House",
+      "Sansotei Ramen",
+      "Ramen Alley",
+    ],
+  });
+  // The text stands whatever becomes of the venue.
+  expect(days.map((d) => d.items.map((i) => i.text))).toEqual(
+    crawl.map((d) => d.items.map((i) => i.text)),
+  );
+  expect(days.map((d) => [d.date, d.title])).toEqual(
+    crawl.map((d) => [d.date, d.title]),
+  );
+});
+
+test("a venue is in its area when the area's telling words start a word of its address or name", async () => {
+  const known: Record<string, Venue[]> = {
+    // The park's name is in the map's name for it, not the address.
+    "Pog Lake Campground": [
+      {
+        name: "Pog Lake Campground (Algonquin Park)",
+        address: "Nipissing District, ON, Canada",
+      },
+    ],
+    // The county the map calls Prince Edward.
+    "Waupoos Estates Winery": [
+      {
+        name: "Waupoos Estates Winery",
+        address: "3016 CR-8, Picton, ON, Canada Prince Edward Ontario",
+      },
+    ],
+    // The same name in another city.
+    Ippudo: [{ name: "Ippudo", address: "65 4th Ave, New York, NY, USA" }],
+    // The next town over, which the map puts within the area.
+    "The Keg Steakhouse": [
+      {
+        name: "The Keg Steakhouse + Bar",
+        address: "Blue Mountains, ON, Canada",
+        nearArea: true,
+      },
+    ],
+    // The same name in a far city that happens to share the area's name;
+    // the map's verdict wins over the words.
+    "Fox and Fiddle": [
+      {
+        name: "Fox and Fiddle",
+        address: "London, England, United Kingdom",
+        nearArea: false,
+      },
+    ],
+    // A kind of place, not one.
+    Market: [{ name: "St. Lawrence Market", address: "Toronto, ON" }],
+    // The same name far outside it.
+    "Mama Rosa's": [
+      {
+        name: "Mama Rosa's",
+        address: "Sudbury, ON, Canada",
+        nearArea: false,
+      },
+    ],
+  };
+  const places: Places = {
+    source: "scripted",
+    search: async (name) => known[name] ?? [],
+  };
+  const day = (place: string) => [
+    {
+      date: "2027-05-22",
+      title: "Out",
+      items: [{ when: "Morning", text: "Go", place }],
+    },
+  ];
+  const kept = async (place: string, area: string) =>
+    (await verifyPlaces(places, area, day(place))).days[0]!.items[0]!.place;
+  expect(await kept("Pog Lake Campground", "Algonquin Park")).toBe(
+    "Pog Lake Campground",
+  );
+  expect(await kept("Waupoos Estates Winery", "Prince Edward County")).toBe(
+    "Waupoos Estates Winery",
+  );
+  expect(await kept("Ippudo", "Toronto")).toBeNull();
+  expect(await kept("The Keg Steakhouse", "Collingwood, ON")).toBe(
+    "The Keg Steakhouse",
+  );
+  expect(await kept("Mama Rosa's", "Collingwood, ON")).toBeNull();
+  expect(await kept("Fox and Fiddle", "London")).toBeNull();
+  expect(await kept("Market", "Toronto")).toBeNull();
+});
+
+test("accents, case and punctuation do not tell a venue or an area apart", async () => {
+  const market: Places = {
+    source: "scripted",
+    search: async () => [
+      {
+        name: "Marché Jean-Talon",
+        address: "7070 Av. Henri-Julien, Montreal, QC",
+      },
+    ],
+  };
+  const { days, venues } = await verifyPlaces(market, "Montréal", [
+    {
+      ...crawl[0]!,
+      items: [
+        { when: "Morning", text: "Breakfast", place: "the marche jean talon" },
+      ],
+    },
+  ]);
+  expect(days[0]!.items[0]!.place).toBe("the marche jean talon");
+  expect(venues).toEqual({ kept: 1, dropped: [] });
+});
+
+test("a lookup that fails drops its venue and is reported once; with no area nothing is looked up", async () => {
+  const down: Places = {
+    source: "down",
+    search: async () => {
+      throw new Error(
+        "Amazon Location answered AccessDeniedException: forbidden",
+      );
+    },
+  };
+  const { days, venues } = await verifyPlaces(down, "Toronto", crawl);
+  expect(days.flatMap((d) => d.items).every((i) => i.place === null)).toBe(
+    true,
+  );
+  expect(venues).toEqual({
+    kept: 0,
+    dropped: [
+      "Kinton Ramen",
+      "St. Lawrence Market",
+      "Ippudo",
+      "kinton ramen",
+      "Chinatown Dumpling House",
+      "Sansotei Ramen",
+      "Santouka Ramen",
+      "Marutama Ramen",
+      "Ramen Alley",
+    ],
+    error: "Amazon Location answered AccessDeniedException: forbidden",
+  });
+  // With no area the only venues allowed are the organizer's own words.
+  expect(await verifyPlaces(down, null, crawl)).toEqual({
+    days: crawl,
+    venues: { kept: 0, dropped: [] },
+  });
+});
+
+test("a summary may contrast the slot's day with the one hoped for, or say that not everyone can come", () => {
+  const partial = facts.slots.find((s) => s.free < 3)!;
+  const accepted = (summary: string, slot = s1) =>
+    checkOptions(
+      { options: [{ ...option(slot, "Brunch", 100), summary }] },
+      facts,
+    );
+  expect(
+    accepted("Saturday rather than the Friday night you hoped for."),
+  ).toHaveProperty("value");
+  expect(
+    accepted("Not everyone can make it, but two of three are free.", partial),
+  ).toHaveProperty("value");
+  expect(accepted("Pancakes everyone will love.", partial)).toHaveProperty(
+    "value",
+  );
+  expect(accepted("Everyone can make it.", partial)).toMatchObject({
+    problem: /says everyone can make it/,
+  });
+});
+
+test("hour by hour, a day wraps past midnight once and then stays in the small hours", () => {
+  const at = (whens: string[]) => ({
+    days: [
+      {
+        title: "Late",
+        items: whens.map((when) => ({ when, text: "Out", place: null })),
+      },
+    ],
+  });
+  const where = { area: null, description: "" };
+  expect(
+    checkDays(at(["21:00", "23:30", "00:15", "01:00"]), 1, "hours", where),
+  ).toHaveProperty("value");
+  expect(
+    checkDays(at(["21:00", "00:15", "23:00"]), 1, "hours", where),
+  ).toMatchObject({ problem: /in order/ });
+  expect(
+    checkDays(at(["21:00", "00:15", "00:10"]), 1, "hours", where),
+  ).toMatchObject({ problem: /in order/ });
+});
+
+test("with no area, only a venue the organizer named may be a place", () => {
+  const lifts = {
+    days: [
+      {
+        ...one,
+        items: [
+          { when: "Morning", text: "Lifts open", place: "Blue Mountain" },
+        ],
+      },
+    ],
+  };
+  expect(
+    checkDays(lifts, 1, "parts", {
+      area: null,
+      description: "Family Day at Blue Mountain, we'll stay at the Westin",
+    }),
+  ).toHaveProperty("value");
+  expect(
+    checkDays(lifts, 1, "parts", { area: null, description: "Ski somewhere" }),
+  ).toMatchObject({ problem: /"Blue Mountain" it does not/ });
+});
+
 test("hour by hour, items are clock times in order", () => {
   const at = (whens: string[]) => ({
     days: [
@@ -470,16 +869,41 @@ test("hour by hour, items are clock times in order", () => {
       },
     ],
   });
-  expect(checkDays(at(["09:30", "12:00", "18:45"]), 1, "hours")).toHaveProperty(
-    "value",
-  );
-  expect(checkDays(at(["9:30"]), 1, "hours")).toMatchObject({
+  expect(
+    checkDays(at(["09:30", "12:00", "18:45"]), 1, "hours", {
+      area: null,
+      description: "",
+    }),
+  ).toHaveProperty("value");
+  // An evening that runs past midnight stays in order, once.
+  expect(
+    checkDays(at(["21:00", "23:30", "00:15"]), 1, "hours", {
+      area: null,
+      description: "",
+    }),
+  ).toHaveProperty("value");
+  expect(
+    checkDays(at(["00:15", "09:00", "00:30"]), 1, "hours", {
+      area: null,
+      description: "",
+    }),
+  ).toMatchObject({ problem: /in order/ });
+  expect(
+    checkDays(at(["9:30"]), 1, "hours", { area: null, description: "" }),
+  ).toMatchObject({
     problem: /24-hour time/,
   });
-  expect(checkDays(at(["12:00", "09:30"]), 1, "hours")).toMatchObject({
+  expect(
+    checkDays(at(["12:00", "09:30"]), 1, "hours", {
+      area: null,
+      description: "",
+    }),
+  ).toMatchObject({
     problem: /in order/,
   });
-  expect(checkDays(at(["Morning"]), 1, "hours")).toMatchObject({
+  expect(
+    checkDays(at(["Morning"]), 1, "hours", { area: null, description: "" }),
+  ).toMatchObject({
     problem: /24-hour time/,
   });
 });
@@ -487,15 +911,16 @@ test("hour by hour, items are clock times in order", () => {
 test("an option whose days never pass, or whose model cannot be reached, is left without any", async () => {
   const garbage = { days: [one] };
   const scripted = scriptedModel([garbage, garbage, garbage]);
-  const written = await writeDays(scripted.model, facts, weekend);
+  const written = await writeDays(scripted.model, everywhere, facts, weekend);
   expect(written).toMatchObject({ attempt: 3, error: /2 days long/ });
   expect(written.days).toEqual([]);
-  const down = await writeDays(unreachable, facts, weekend);
+  const down = await writeDays(unreachable, everywhere, facts, weekend);
   expect(down).toMatchObject({
     attempt: 1,
     error: "connect ECONNREFUSED",
     unreachable: true,
     days: [],
+    venues: { kept: 0, dropped: [] },
   });
 });
 
@@ -533,6 +958,7 @@ test("after three bad answers, stretches that share no day stand in with the top
     start: "2026-12-05",
     end: "2026-12-06",
     picks: ["Mont Tremblant"],
+    area: null,
     detail: "parts",
     days: [],
     daysPending: false,
@@ -600,17 +1026,22 @@ test("the fake passes every check for both details and its costs rise by option"
     expect(made).toMatchObject({ maker: "model", attempt: 1 });
     expect(made.itineraries).toHaveLength(3);
     for (const itinerary of made.itineraries) {
-      const written = await writeDays(fake.days, open, itinerary);
+      const written = await writeDays(fake.days, fakePlaces(), open, itinerary);
       expect(written).toMatchObject({ attempt: 1 });
       expect(written.days.length).toBe(
         facts.slots.find(
           (s) => s.start === itinerary.start && s.end === itinerary.end,
         )!.days,
       );
-      for (const item of written.days.flatMap((d) => d.items))
+      for (const item of written.days.flatMap((d) => d.items)) {
         expect(item.when).toMatch(
           detail === "parts" ? /^(Morning|Afternoon|Evening)$/ : /^\d\d:\d\d$/,
         );
+        // The fake map knows resorts, parks and markets; the resort labels
+        // here are none of those, so no venue survives.
+        expect(item.place).toBeNull();
+      }
+      expect(written.venues.dropped.length).toBeLessThanOrEqual(1);
       expect(JSON.stringify(written.days)).not.toMatch(/cost|\$/);
     }
     expect(JSON.stringify(made.itineraries)).not.toMatch(/cost|\$/);

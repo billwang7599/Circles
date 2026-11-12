@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Circles API alerts on the circles-alerts topic - 5xx answers from the load balancer or the API, Bedrock spend by the hour and a monthly Bedrock budget
+Description: Circles API alerts on the circles-alerts topic - 5xx answers from the load balancer or the API, Bedrock spend by the hour and a monthly budget for Bedrock and Amazon Location
 
 Parameters:
   AlertEmail:
@@ -114,7 +114,7 @@ Resources:
         BudgetType: COST
         TimeUnit: MONTHLY
         BudgetLimit: { Amount: !Ref BedrockMonthlyLimitUsd, Unit: USD }
-        CostFilters: { Service: [Amazon Bedrock] }
+        CostFilters: { Service: [Amazon Bedrock, Amazon Location Service] }
       NotificationsWithSubscribers:
         - Notification:
             NotificationType: ACTUAL

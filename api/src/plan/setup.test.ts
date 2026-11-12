@@ -205,14 +205,41 @@ test("a question about food is dropped unless the plan is about food", async () 
   }
   const kept = await asked(skiTrip, [dates, { ...flat, title: "Ski resort" }]);
   expect(kept.questions).toHaveLength(2);
-  // Nothing left to ask: the plain set stands under the model's title.
-  const only = await asked(skiTrip, [diet]);
+  // Nothing left to ask (a one-day window, so no dates question is owed):
+  // the plain set stands under the model's title.
+  const only = await setupEvent(
+    scriptedModel<CreateEvent>([{ title: "Plan", questions: [diet] }]).model,
+    {
+      description: skiTrip,
+      windowStart: "2026-12-05",
+      windowEnd: "2026-12-05",
+    },
+  );
   expect(only.title).toBe("Plan");
   expect(only.questions.map((q) => q.kind)).toEqual([
     "dates",
     "budget",
     "text",
   ]);
+});
+
+test("a window longer than a day needs a dates question", () => {
+  const output = {
+    title: "Dinner",
+    questions: [
+      {
+        kind: "text",
+        title: "Anything else?",
+        hint: "",
+        presets: null,
+        choices: null,
+      },
+    ],
+  };
+  expect(checkSetup(output, 2)).toEqual({
+    problem: expect.stringMatching(/3 days, so ask a dates question/),
+  });
+  expect(checkSetup(output, 0)).toHaveProperty("value");
 });
 
 test("a title cut from the description keeps whole words and whole characters", () => {

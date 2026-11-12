@@ -14,7 +14,7 @@ stay private); the organizer makes itinerary options from the answers.
 git clone https://github.com/billwang7599/Circles && cd Circles
 npm ci && docker compose up -d && cp api/.env.example api/.env
 npm run dev -w api     # http://localhost:3001/api/health
-npm run seed -w api -- you@example.com  # optional: a ski trip with three responses, organized by you
+npm run seed -w api -- you@example.com  # optional: ten events in every state, yours and friends', on the model api/.env names
 npm run ios -w mobile  # first time, and again when a native module is added: builds the iOS dev app, needs Xcode
 npm run dev -w mobile  # then press i for the simulator or w for the browser
 ```
@@ -74,7 +74,8 @@ has deletion protection on, so turn that off before deleting the stack.
 **Alerts**
 The `circles-alerts` stack (SES volume and reputation, Cognito and SES budgets; not in the repo) emails the address
 it was deployed with. `infra/api-alerts.yml` adds the API's own on the same topic: 5xx answers from the load balancer
-or the API, Bedrock spend by the hour (tokens at list prices) and a monthly Bedrock budget. Deploy or update it with:
+or the API, Bedrock spend by the hour (tokens at list prices) and a monthly budget for Bedrock and Amazon Location.
+Deploy or update it with:
 
 ```
 aws cloudformation deploy --profile circles --region ca-central-1 --stack-name circles-api-alerts \
@@ -87,14 +88,39 @@ aws cloudformation deploy --profile circles --region ca-central-1 --stack-name c
 every push. One workspace: `npm test -w api`. Tests run on PGlite, so they need no Docker. Format what you touched
 with `npx prettier --write <files>`.
 
+The planner has an eval set: forty plans as organizers type them and friends answer them, labelled by hand
+(`api/src/evals/scenarios.ts`). `npm test` runs them on the fakes, where every rule code guarantees must hold.
+`npm run eval -w api` runs them on the model `api/.env` names and reports the labels it met and every miss;
+`-- --show` prints what it made, to read for what code cannot check, `-- --stage=dates` or `-- --only=ramen` narrows
+a run. Run it after a prompt change, and add a scenario for each real plan that went wrong.
+
 **App State**
 Locally everything is on your own machine: app → your API → your Docker Postgres. To test real multi-phone flows, phones must share one API which is what AWS is for.
 
 **Real model (optional)**
 The API sets up events, reads date ranges and writes itinerary options with Claude on Bedrock when `BEDROCK_MODEL_ID`
-is set; hard rules (dates, budgets, party size) stay in code. For Bedrock, accept the AWS
-invite, then in a terminal `aws configure sso` (portal link, region `us-east-1`, Circles App → AdministratorAccess,
-profile name `circles`) and in your `api/.env`:
+is set; hard rules (dates, budgets, party size) stay in code. Itineraries name venues only where the description or a
+chosen option names the city or region; a neighbourhood alone gets none, apart from venues the description itself
+names, which stand on the organizer's word, so organizers who want places should say the city. Every other venue the
+model names is checked on Amazon Location Service Places through the same AWS credentials
+as Bedrock, billed to the account per request: the option's area is geocoded once per process, leaning towards
+`PLACES_BIAS` (longitude,latitude; Toronto unless set) and trusted only when the map answers with a place of that
+name, then each venue is searched by name near it and kept only when a venue of that name is there or within the area;
+the rest lose their name and keep their text. Answers are kept in `venue_lookups` for a month, which is why the
+searches are requested at the Storage rate, and remaking an event asks the map once per venue. `PLACES_MAX_REQUESTS`
+caps the geocodes and searches one API process makes in a day (300 unless set), and venues past the cap are dropped
+too.
+Without a model the fake stands in, which knows only names with "Resort", "Park" or "Market" in them. In production
+the ECS task role needs the two actions, granted by hand (it applies without a redeploy):
+
+```
+aws iam put-role-policy --profile circles --region ca-central-1 --role-name circles-api-task --policy-name places \
+  --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["geo-places:Geocode","geo-places:SearchText"],"Resource":"arn:aws:geo-places:ca-central-1::provider/default"}]}'
+```
+
+Named holidays ("Thanksgiving weekend") are Canada's, dated in code.
+For Bedrock, accept the AWS invite, then in a terminal `aws configure sso` (portal link, region `us-east-1`,
+Circles App → AdministratorAccess, profile name `circles`) and in your `api/.env`:
 
 ```
 BEDROCK_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0

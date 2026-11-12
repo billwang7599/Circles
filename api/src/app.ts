@@ -9,7 +9,9 @@ import { itineraries } from "./itineraries.ts";
 import { log } from "./log.ts";
 import { fakeDates, type DatesModel } from "./plan/dates.ts";
 import { fakeItineraries, type ItineraryModel } from "./plan/itinerary.ts";
+import { fakePlaces, type Places } from "./plan/places.ts";
 import { fakeSetup, type SetupModel } from "./plan/setup.ts";
+import { cachedPlaces } from "./placesCache.ts";
 
 export function createApp(
   db: Db,
@@ -19,6 +21,7 @@ export function createApp(
     setup?: SetupModel;
     dates?: DatesModel;
     itineraries?: ItineraryModel;
+    places?: Places;
     invites?: InviteOptions;
   },
 ) {
@@ -63,7 +66,14 @@ export function createApp(
     ),
   );
   app.route("/api", inviteClaims(db, deps.invites));
-  app.route("/api", itineraries(db, deps.itineraries ?? fakeItineraries()));
+  app.route(
+    "/api",
+    itineraries(
+      db,
+      deps.itineraries ?? fakeItineraries(),
+      cachedPlaces(db, deps.places ?? fakePlaces()),
+    ),
+  );
 
   return app;
 }

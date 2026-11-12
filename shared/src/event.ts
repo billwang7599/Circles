@@ -19,7 +19,8 @@ export const EventTitle = z
   .string()
   .trim()
   .min(1, "Enter a title")
-  .max(60, "At most 60 characters");
+  .max(60, "At most 60 characters")
+  .refine((t) => !/[\r\n]/.test(t), "Keep the title on one line");
 
 const QuestionTitle = z
   .string()
@@ -200,10 +201,12 @@ export const EditEvent = z.object({ title: EventTitle, questions: Questions });
 export type EditEvent = z.infer<typeof EditEvent>;
 
 // A date range in the organizer's words, with their calendar day so that
-// "next month" means something.
+// "next month" means something and, when known, their time zone as a hint
+// of whose holidays "Thanksgiving weekend" means.
 export const ReadDates = z.object({
   text: z.string().trim().min(1, "Say when").max(120, "At most 120 characters"),
   today: IsoDate,
+  timezone: z.string().max(64).optional(),
 });
 export type ReadDates = z.infer<typeof ReadDates>;
 

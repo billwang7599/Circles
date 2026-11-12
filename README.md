@@ -29,7 +29,6 @@ As answers come in, Circles turns them into itinerary options for the group. Fre
 
 **Future work**
 
-- Grounding itinerary stops in a places API
 - Calendar export and sharing an itinerary as a file
 - Expense splitting after the trip
 

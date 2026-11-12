@@ -9,9 +9,7 @@ import { pgDb } from "./db.ts";
 import { settlePendingDays } from "./itineraries.ts";
 import { log } from "./log.ts";
 import { migrate } from "./migrate.ts";
-import { bedrockDates, fakeDates } from "./plan/dates.ts";
-import { bedrockItineraries, fakeItineraries } from "./plan/itinerary.ts";
-import { bedrockSetup, fakeSetup } from "./plan/setup.ts";
+import { modelsFor } from "./plan/models.ts";
 
 const envFile = fileURLToPath(new URL("../.env", import.meta.url));
 if (existsSync(envFile)) process.loadEnvFile(envFile);
@@ -26,6 +24,9 @@ const env = z
     NODE_ENV: z.string().default("development"),
     AWS_REGION: z.string().default("ca-central-1"),
     BEDROCK_MODEL_ID: z.string().default(""),
+    // Read by modelsFor, blank for the defaults.
+    PLACES_MAX_REQUESTS: z.string().optional(),
+    PLACES_BIAS: z.string().optional(),
     COGNITO_USER_POOL_ID: z.string().default(""),
     COGNITO_CLIENT_ID: z.string().default(""),
   })
@@ -33,19 +34,7 @@ const env = z
 
 const verifier = verifierFor(env);
 
-// One model for every feature, on Bedrock through the default credential
-// chain when one is named; the fakes otherwise.
-const models = env.BEDROCK_MODEL_ID
-  ? {
-      setup: bedrockSetup(env.AWS_REGION, env.BEDROCK_MODEL_ID),
-      dates: bedrockDates(env.AWS_REGION, env.BEDROCK_MODEL_ID),
-      itineraries: bedrockItineraries(env.AWS_REGION, env.BEDROCK_MODEL_ID),
-    }
-  : {
-      setup: fakeSetup(),
-      dates: fakeDates(),
-      itineraries: fakeItineraries(),
-    };
+const models = modelsFor(env);
 
 const pool = new Pool({ connectionString: env.DATABASE_URL });
 const client = await pool.connect();
@@ -68,6 +57,7 @@ serve({ fetch: app.fetch, port: env.PORT }, () =>
     env: env.NODE_ENV,
     port: env.PORT,
     model: models.setup.model,
+    places: models.places.source,
     auth: verifier === devVerifier ? "dev" : "cognito",
   }),
 );
